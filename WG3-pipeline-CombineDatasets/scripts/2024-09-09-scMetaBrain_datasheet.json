@@ -1,0 +1,74 @@
+{
+    "Dataset": [
+        "Mathys2019",
+        "Zhou2020",
+        "Cain2023",
+        "RocheColumbia2022",
+        "RocheAD2022",
+        "RocheMS2022",
+        "Fujita2022"
+    ],
+    "WG1-ImputedVCF": [
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/minimac_imputed_by_datatset/Mathys2019_EUR_imputed_hg38.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/minimac_imputed_by_datatset/Zhou2020_EUR_imputed_hg38.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/minimac_imputed_by_datatset/Cain2023_EUR_imputed_hg38.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/minimac_imputed_by_datatset/Cain2023_EUR_imputed_hg38.vcf.gz",
+        "/path/to/2023-10-31-Roche/Step1-Imputation/minimac_imputed_by_datatset/RocheAD2022_EUR_imputed_hg38.vcf.gz",
+        "/path/to/2023-10-31-Roche/Step1-Imputation/minimac_imputed_by_datatset/RocheMS2022_EUR_imputed_hg38.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/minimac_imputed_by_datatset/Fujita2022_EUR_imputed_hg38.vcf.gz"
+    ],
+    "WG1-HetVCF": [
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz",
+        "/path/to/2023-10-31-Roche/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz",
+        "/path/to/2023-10-31-Roche/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/het_filter/EUR_het_filtered.vcf.gz"
+    ],
+    "WG1-PSAM": [
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/manual_selection/updated.psam",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/manual_selection/updated.psam",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/manual_selection/updated.psam",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/manual_selection/updated.psam",
+        "/path/to/2023-10-31-Roche/Step1-Imputation/manual_selection/updated.psam",
+        "/path/to/2023-10-31-Roche/Step1-Imputation/manual_selection/updated.psam",
+        "/path/to/2024-01-31-AMP-AD/Step1-Imputation/manual_selection/updated.psam"
+    ],
+    "WG1-metadata": [
+        "/path/to/2024-03-20-Mathys2019/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz",
+        "/path/to/2024-03-20-Zhou2020/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz",
+        "/path/to/2024-03-20-Cain2023/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz",
+        "/path/to/2024-03-24-RocheColumbia2022/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz",
+        "/path/to/2024-03-22-RocheAD2022/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz",
+        "/path/to/2024-03-24-RocheMS2022/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz",
+        "/path/to/2024-08-14-Fujita2022/Step2-DemultiplexingAndDoubletRemoval/CombinedResults/Final_Assignments_demultiplexing_doublets.tsv.gz"
+    ],
+    "WG2-metadata": [
+        "/path/to//2024-03-21-Mathys2019/map/azimuth_all.metadata.tsv.gz",
+        "/path/to//2024-03-21-Zhou2020/map/azimuth_all.metadata.tsv.gz",
+        "/path/to//2024-03-21-Cain2023/map/azimuth_all.metadata.tsv.gz",
+        "/path/to//2024-03-23-RocheColumbia2022/map/azimuth_all.metadata.tsv.gz",
+        "/path/to//2024-03-22-RocheAD2022/map/azimuth.metadata.tsv.gz",
+        "/path/to//2024-03-22-RocheMS2022/map/azimuth.metadata.tsv.gz",
+        "/path/to//2024-08-05-Fujita2022/map/azimuth.metadata.tsv.gz"
+    ],
+    "CellAnnotation": [
+        "/path/to//input/processeddata/single-cell/metadata/Mathys2019/Mathys2019_cell_annotations.tsv.gz",
+        "/path/to//input/processeddata/single-cell/metadata/Zhou2020/Zhou2020_cell_annotations.tsv.gz",
+        "/path/to//input/processeddata/single-cell/metadata/Cain2023/Cain2023_cell_annotations.tsv.gz",
+        "/path/to//input/processeddata/single-cell/metadata/RocheColumbia2022/RocheColumbia2022_cell_annotations.tsv.gz",
+        "/path/to//input/processeddata/single-cell/metadata/RocheAD2022/RocheAD2022_cell_annotations.tsv.gz",
+        "/path/to//input/processeddata/single-cell/metadata/RocheMS2022/RocheMS2022_cell_annotations.tsv.gz",
+        "/path/to//input/processeddata/single-cell/metadata/Fujita2022/Fujita2022_cell_annotations_CellBender.tsv.gz"
+    ],
+    "PoolSheet": [
+        "/path/to/2023-12-12-WG0-samplesheets/Mathys2019_wg0_file_directories.tsv",
+        "/path/to/2023-12-12-WG0-samplesheets/Zhou2020_wg0_file_directories.tsv",
+        "/path/to/2023-12-12-WG0-samplesheets/Cain2023_wg0_file_directories.tsv",
+        "/path/to/2023-12-12-WG0-samplesheets/RocheColumbia2022_wg0_file_directories.tsv",
+        "/path/to/2023-12-12-WG0-samplesheets/RocheAD2022_wg0_file_directories.tsv",
+        "/path/to/2023-12-12-WG0-samplesheets/RocheMS2022_wg0_file_directories.tsv",
+        "/path/to/2023-12-19-Fujita2022/Combine_Results/wg0_file_directories_CellBender.tsv"
+    ]
+}

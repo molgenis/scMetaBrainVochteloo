@@ -1,0 +1,187 @@
+##############################################################################################################
+##### The following arguments need to be changed by the user to indicating file locations on your system #####
+##############################################################################################################
+inputs:
+  bind_path: ### directories that the singularity should have access to (comma seperated).
+  singularity_image: ### path to the singularity image containing the required software.
+  repo_dir: ### path to the base directory where the scripts are stored (i.e. parent of `scripts`).
+
+  annotation: ### `genes.gtf` of your alignment reference. If the file does not end with `.gtf` it assumes it is a mbQTL annotation file.
+  vcf: ### bgzipped genotype VCF file.
+  exp: ### expression file. This is a tab-separated file containing the expression of each feature per sample. The first column contains the features names. The rest of the columns are the sample names.
+  gte: ### genotype to expression coupling file. This is a tab-separated file with three columns; genotype ID, expression ID, dataset (name). There is no header.
+
+  cov: ### covariate file. Tab-separated file containing the covariate values of each feature per sample. The first column contains the covariates. The rest of the columns are the sample names.
+  expgroups: ### File defining groups of phenotypes. File with one line per gene ID - group. No Header.
+  genelimit: ### Gene limit file. File with one line per gene ID. No Header.
+  snplimit: ### SNP limit file. File with one line per SNP ID. No Header.
+  snpgenelimit: ### SNP - gene limit file. Tab-seperated file with one line per SNP - gene ID. The first column contains the SNP IDs and the second column the gene IDs. No Header.
+
+  plot_eqtls: ### SNP - gene limit file of the eQTLs to plot. Tab-seperated file with one line per SNP - gene ID. The first column contains the SNP IDs and the second column the gene IDs. No Header.
+
+outputs:
+  output_dir: ### the output directory.
+  output_prefix: ### the output filename prefix.
+
+general_settings:
+  preflight_checks: False ### perform pre-flight checks such as checking the samples overlap between the input files. No other results will be generated. Default `False`.
+  plot_pca: False ### whether or not to PCA visualise the expression matrix. Default `False`.
+  map_qtls: True ### whether or not to eQTLs should be mapped, e.g. if you wish to inspect the PCA plots first. Default `True`.
+  visualise: True ### whether or not to the results should be visualised. Default `True`.
+
+  include_modes: null ### which modes to run (options: `all`, `default`, `cov`, `covXPcs`, `XPcs`).
+  force_mega: null ### force the covariate correction and / or eQTL mapping to be done over all samples at once (options: 'all', 'cov', 'qtl').
+  n_pcs: null ### how many PCs should be removed from the expression matrix (e.g. `[0, 5, 10]`).
+  filter_vcf: True ### whether or not the input VCF should be filtered on variants / samples of interest before running QTL analysis.
+  filter_vcf_maf: null ### filter the input VCF on MAF. Default `qtl_settings: maf`.
+  filter_vcf_cr: null ### filter the input VCF on call rate. Default `qtl_settings: cr`.
+  filter_vcf_hwep: null ### filter the input VCF on hardy-Weinberg p-value threshold. Default `qtl_settings: hwep`.
+  filter_vcf_r2: 0.6 ### filter the input VCF on MACH R2 >=X. Default `0.6`.
+  n_genes: 100 ### how many genes should be tested per chunk. If empty, all genes are tested in 1 chunk. Default `100`.
+  use_snpannotation: False ### whether or not the `snpannotation` option should be used. Default `False`.
+  alpha: 0.05 ### QTL significance threshold. Default '0.05'.
+  signif_column: "qval" ### The column used to filter significant effects (options: `MetaP`, `BetaAdjustedMetaP`, `BonfAdjustedMetaP`, `BonfBHAdjustedMetaP`, `bh_fdr`, `qval`). Default `qval`.
+
+qtl_settings:
+  analysis_type: "cis" ### which variants to test per gene (options: 'cis', 'trans', 'cistrans'). Default 'cis'.
+  meta_analysis_method: "empzmeta" ### which variants to test per gene (options: 'empzmeta', 'fisherzmeta', 'fisherzmetarandom'). Default 'empzmeta'.
+  seed: 123456789 ### random seed. Default: '123456789'.
+  perm: 1000 ### number of permutations. Default: '1000'.
+  ciswindow: 1000000 ### cis window size. Default: '1000000'(1mb).
+  maf: 0.01 ### minor allele frequency threshold. Default '0.01'.
+  cr: 0.95 ### call-rate threshold. Default '0.95'.
+  hwep: 0.0001 ### hardy-Weinberg p-value threshold. Default '0.0001'.
+  minobservations: 10 ### require at least this many observations per dataset (i.e. non-NaN genotypes/phenotypes). Default '10'.
+  nrdatasets: 2 ### minimum number of datasets required in meta-analysis. Default '2'.
+  mingenotypecount: 0 ### Minimal number of individuals per genotype group. Default: '0'.
+  splitmultiallelic: False ### split multi allelic variants instead of skipping them. Default: 'False'.
+  onlytestsnps: False ### skip INDELs and only test SNPs. Default 'False'.
+  testnonparseablechr: False ### Test variants and genes that map to non-parseable chromosomes (e.g. patch chromosomes). Default 'False'.
+  replacemissinggenotypes: False ### replace missing genotypes with average genotype: use this when both genotypes and expression data have missing values and perm > 0. Default 'False'.
+  usehardgenotypecalls: False ### use hard genotype calls instead of dosages derived from genotype probabilities. Default: 'False'.
+  norank: False ### do not rank expression data. Default 'False'.
+  outputall: False ### output all associations, not just top association per gene. (options: True, False, or 'chr'). If True, the effects will be outputted per batch. If chr, the effects will instead be outputted per chromosome with a tabix index using a separate job. Default 'False'.
+  outputall_chr_sortby: "sortbygenepos" ### how to sort the all effects file, only applied if 'outputall: chr' is used (options: 'sortbyz', 'sortbysnppos', or 'sortbygenepos'). Default: 'sortbygenepos'.
+  outputallpermutations: False ### output all permuted associations, not just top association per gene. Default 'False'.
+  snplog: False ### output SNP summary stats per snp/gene pair. Default 'False'.
+
+cluster_time: {0: "00:59:00", 1: "05:59:00",  2: "23:59:00", 3: "6-23:59:00"} ### Options for dynamic time usage for cluster submissions of jobs
+
+##############################################################################################################
+##### The following arguments are common parameters that may need to be changed depending on the dataset #####
+##############################################################################################################
+
+preflight_checks_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+preflight_checks_threads: 1 ### Number of threads to use
+preflight_checks_time: 0 ### The time setting to use
+
+create_gene_annotation_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+create_gene_annotation_threads: 1 ### Number of threads to use
+create_gene_annotation_time: 0 ### The time setting to use
+
+create_snp_annotation_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+create_snp_annotation_threads: 1 ### Number of threads to use
+create_snp_annotation_time: 0 ### The time setting to use
+
+smf_to_gte_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+smf_to_gte_threads: 1 ### Number of threads to use
+smf_to_gte_time: 0 ### The time setting to use
+
+split_gte_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+split_gte_threads: 1 ### Number of threads to use
+split_gte_time: 0 ### The time setting to use
+
+split_snpgenelimit_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+split_snpgenelimit_threads: 1 ### Number of threads to use
+split_snpgenelimit_time: 0 ### The time setting to use
+
+index_vcf_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+index_vcf_threads: 1 ### Number of threads to use
+index_vcf_time: 0 ### The time setting to use
+
+genotype_io_memory: 8 ### Amount of gigs that will be used for memory and disk space per thread
+genotype_io_threads: 4 ### Number of threads to use
+genotype_io_time: 0 ### The time setting to use
+
+filter_vcf_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+filter_vcf_threads: 1 ### Number of threads to use
+filter_vcf_time: 0 ### The time setting to use
+
+gte_to_dataset_cov_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+gte_to_dataset_cov_threads: 1 ### Number of threads to use
+gte_to_dataset_cov_time: 0 ### The time setting to use
+
+filter_matrix_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+filter_matrix_threads: 1 ### Number of threads to use
+filter_matrix_time: 0 ### The time setting to use
+
+pca_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+pca_threads: 1 ### Number of threads to use
+pca_time: 0 ### The time setting to use
+
+merge_matrices_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+merge_matrices_threads: 1 ### Number of threads to use
+merge_matrices_time: 0 ### The time setting to use
+
+regressor_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+regressor_threads: 1 ### Number of threads to use
+regressor_time: 0 ### The time setting to use
+
+remove_gte_dataset_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+remove_gte_dataset_threads: 1 ### Number of threads to use
+remove_gte_dataset_time: 0 ### The time setting to use
+
+create_batches_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+create_batches_threads: 1 ### Number of threads to use
+create_batches_time: 0 ### The time setting to use
+
+run_qtl_memory: 2 ### Amount of gigs that will be used for memory and disk space per thread
+run_qtl_threads: 2 ### Number of threads to use
+run_qtl_time: 1 ### The time setting to use
+
+export_all_effects_memory: 5 ### Amount of gigs that will be used for memory and disk space per thread
+export_all_effects_threads: 6 ### Number of threads to use
+export_all_effects_time: 1 ### The time setting to use
+
+merge_top_effects_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+merge_top_effects_threads: 1 ### Number of threads to use
+merge_top_effects_time: 0 ### The time setting to use
+
+multiple_test_correction_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+multiple_test_correction_threads: 1 ### Number of threads to use
+multiple_test_correction_time: 0 ### The time setting to use
+
+filter_significant_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+filter_significant_threads: 1 ### Number of threads to use
+filter_significant_time: 0 ### The time setting to use
+
+visualise_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+visualise_threads: 1 ### Number of threads to use
+visualise_time: 0 ### The time setting to use
+
+plot_eqtls_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+plot_eqtls_threads: 1 ### Number of threads to use
+plot_eqtls_time: 0 ### The time setting to use
+
+results_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+results_threads: 1 ### Number of threads to use
+results_time: 0 ### The time setting to use
+
+############################################################################################################################################
+##### The following arguments in this section should not need to be changed/edited unless the default options do not work your dataset #####
+############################################################################################################################################
+create_annotation_settings:
+  feature_name: "gene_name" ### the info column that in your gtf that describes the names of the genes in your expression matrix. Default `gene_name`.
+  autosomes_only: True ### whether or not to only include autosomal chromosomes. Default 'True'.
+
+pca_settings:
+  eval_n_pcs: 3 ### how many PCs to evaluate for outlier detection; same number of Pcs is plotted
+  sample_outlier_zscore: 3 ### max absolute zscore calculated over `eval_n_pcs` number of PCs, higher than this number is defined as outlier
+
+qtl_settings_extra:
+  mbqtl_jar: null ### use this mbQTL jar instead of the one in the singularity image.
+
+settings_extra:
+  java_memory_buffer: 2 ### increase job memory to this amount when running java applications to ensure '-Xmx' and '-Xms' do not overflow the max memory.
+  force: False ### prevent snakemake from updating input settings that are unlogical. Use with caution.
+  debug: False ### set logger to level DEBUG printing additional information.

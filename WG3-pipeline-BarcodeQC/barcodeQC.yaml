@@ -1,0 +1,40 @@
+##############################################################################################################
+##### The following arguments need to be changed by the user to indicating file locations on your system #####
+##############################################################################################################
+inputs:
+  bind_path: ### directories that the singularity should have access to (comma seperated).
+  singularity_image: ### path to the singularity image containing the required software.
+  repo_dir: ### path to the base directory where the scripts are stored (i.e. parent of `scripts`).
+  poolsheet: ### tab separated file that has a header. Each line has a pool name used for the scRNA-seq directories, the BAM file, the barcode files, and the number of individuals in each pool
+  cell_annotation: ### tab seperated file with a header that denotes the relevant metadata of each cell
+  rb_genes: ### file containing ribosomal genes
+  mt_genes: ### file containing mitochondrial genes
+
+outputs:
+  output_dir: ### the output directory.
+
+settings:
+  dataset: 
+  ncount_rna: 500 # min value 
+  nfeature_rna: 0 # min value 
+  complexity: 100 # max value
+  percent_rb: 100 # max value
+  percent_mt: 5 # max value
+  malat1: 0 # min value
+  cap_barcodes: 
+  feature_name: "HGNC"
+  aggregate_fun: "sum"
+
+cluster_time: {0: "00:59:00", 1: "05:59:00",  2: "23:59:00", 3: "6-23:59:00"} 
+
+##############################################################################################################
+##### The following arguments are common parameters that may need to be changed depending on the dataset #####
+##############################################################################################################
+barcode_qc_memory: 8
+barcode_qc_threads: 1
+barcode_qc_time: 0
+
+poolsheet_memory: 8
+poolsheet_threads: 1
+poolsheet_time: 0
+

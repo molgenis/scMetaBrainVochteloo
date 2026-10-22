@@ -1,0 +1,244 @@
+#!/usr/bin/env python
+import pandas as pd
+import os
+
+# Set logger level.
+if config["settings_extra"]["debug"]:
+    logger.set_level("DEBUG")
+
+# Check required input arguments.
+if config["inputs"]["singularity_image"] is None or not os.path.exists(config["inputs"]["singularity_image"]):
+    logger.error("Critical, singularity_image does not exist.\n\nExiting.")
+    exit("MissingSingularityImage")
+if config["inputs"]["repo_dir"] is None or not os.path.exists(config["inputs"]["repo_dir"]):
+    logger.error("Critical, repo_dir does not exist.\n\nExiting.")
+    exit("MissingRepoDir")
+if config["inputs"]["poolsheet"] is None or not os.path.exists(config["inputs"]["poolsheet"]):
+    logger.error("Critical, poolsheet file does not exist.\n\nExiting.")
+    exit("MissingPoolSheet")
+if config["inputs"]["psam"] is None or not os.path.exists(config["inputs"]["psam"]):
+    logger.error("Critical, psam file does not exist.\n\nExiting.")
+    exit("MissingPSAM")
+if config["inputs"]["cell_annotation"] is None or not os.path.exists(config["inputs"]["cell_annotation"]):
+    logger.error("Critical, cell annotation file does not exist.\n\nExiting.")
+    exit("MissingCellAnnotation")
+if config["inputs"]["droplet_type_annotation"] is None or not os.path.exists(config["inputs"]["droplet_type_annotation"]):
+    logger.error("Critical, droplet type annotation file does not exist.\n\nExiting.")
+    exit("MissingDropletTypeAnnotation")
+if config["inputs"]["cell_type_annotation"] is None or not os.path.exists(config["inputs"]["cell_type_annotation"]):
+    logger.error("Critical, cell type annotation file does not exist.\n\nExiting.")
+    exit("MissingCellTypeAnnotation")
+if config["inputs"]["gene_annotation"] is None or not os.path.exists(config["inputs"]["gene_annotation"]):
+    logger.error("Critical, gene annotation file does not exist.\n\nExiting.")
+    exit("MissingGeneAnnotation")
+if config["inputs"]["rb_genes"] is None or not os.path.exists(config["inputs"]["rb_genes"]):
+    logger.error("Critical, RB genes file does not exist.\n\nExiting.")
+    exit("MissingRBGenes")
+if config["inputs"]["mt_genes"] is None or not os.path.exists(config["inputs"]["mt_genes"]):
+    logger.error("Critical, MT genes file does not exist.\n\nExiting.")
+    exit("MissingMTGenes")
+if config["outputs"]["output_dir"] is None:
+    logger.error("Critical, the output_dir cannot be empty.\n\nExiting.")
+    exit("MissingOutputDir")
+
+# Add trailing /.
+if not config["outputs"]["output_dir"].endswith("/"):
+    config["outputs"]["output_dir"] += "/"
+
+# Create the output directory.
+os.makedirs(config["outputs"]["output_dir"], exist_ok=True)
+
+# Loading poolsheet.
+logger.info("Loading the input poolsheet")
+POOL_DF = pd.read_csv(config["inputs"]["poolsheet"], sep="\t", dtype=str)
+logger.info("\tLoaded {} with shape: {}".format(os.path.basename(config["inputs"]["poolsheet"]), POOL_DF.shape))
+
+POOL_DF.fillna("NA", inplace=True)
+POOL_DF.index = POOL_DF["Pool"]
+
+if "Pool" not in POOL_DF.columns:
+    logger.info("\tError, missing 'Pool' column in poolsheet file for the selected methods.\n\nExiting.")
+    stop("InvalidPoolSheetFile")
+if not POOL_DF["Pool"].is_unique:
+    logger.info("\tError, your 'Pool' column contains duplicates, please make sure all values are unique.\n\nExiting.")
+    stop("InvalidPoolSheetFile")
+
+logger.info("\tLoaded {} with shape: {}".format(os.path.basename(config["inputs"]["poolsheet"]), POOL_DF.shape))
+
+POOL_DF.fillna("NA", inplace=True)
+POOL_DF.index = POOL_DF["Pool"]
+logger.info("\tValid.")
+POOLS = POOL_DF["Pool"].tolist()
+
+wildcard_constraints:
+    pool = "[\w-]+",
+    sample = "[\\w.-]+", 
+    cell_type = "[A-Za-z.]+"
+
+def print_wildcards(wildcards):
+    out = []
+    for key, value in wildcards.items():
+        out.append(key + "=" + value)
+    return ", ".join(out)
+
+def get_pool_samples(wildcards):
+    logger.debug("get_pool_samples({})".format(print_wildcards(wildcards)))
+    pool_samples = {"pool": [], "sample": []}
+    n_samples = 0
+    ct = wildcards.cell_type
+    cell_level = config["settings"]["cell_level"]
+    dataset = config["settings"]["dataset"]
+    file = config["inputs"]["sample_selection"][ct]
+    df = pd.read_csv(file,sep="\t")
+    df = df[(df["Dataset"] == dataset) & (df[cell_level] == ct)]
+    POOLS = df["Pool"].tolist()
+    for pool in POOLS:
+        pool_df = df[df["Pool"] == pool]
+        samples = pool_df["Sample"].tolist()
+        logger.debug("\tpool = {} has samples = {}".format(pool, ", ".join(samples)))
+        pool_samples["pool"].extend([pool] * len(samples))
+        pool_samples["sample"].extend(samples)
+        n_samples += len(samples)
+    logger.debug("\tfound '{:,}' samples".format(n_samples))
+    # print(pool_samples)
+    return pool_samples
+
+logger.info("\tValid.")
+POOLS = POOL_DF["Pool"].tolist()
+
+rule all:
+    input:
+        # counts = lambda wildcards: expand(config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1pf.counts.h5", zip, **get_pool_samples(wildcards),  allow_missing=True),
+        done = expand(config["outputs"]["output_dir"] + "expression/expression/data/{cell_type}/{cell_type}.done", cell_type = config["settings"]["cell_type"])
+
+# Important to check if filter_split_counts is done to prevent snakemake errors.
+rule average_read_counts:
+    input:
+        #fsc_done = expand(config["outputs"]["output_dir"] + "expression/{pool}/{pool}.done", pool=POOLS, allow_missing=True),
+        weights = lambda wildcards: expand(config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.sumcounts.weights.txt.gz", zip, **get_pool_samples(wildcards), allow_missing=True)
+    output:
+        avg_read_depth = config["outputs"]["output_dir"] + "expression/data/{cell_type}/sumcounts.avg_read_depth.json"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["average_read_counts_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["average_read_counts_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["average_read_counts_time"]],
+    threads: config["average_read_counts_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/average_read_counts.py",
+        feature_name = config["settings_extra"]["feature_name"],
+        pattern = config["outputs"]["output_dir"] + "expression/*/data/*.{cell_type}.sumcounts.weights.txt.gz",
+        min_obs_per_gene = config["correlate_settings"]["min_obs_per_gene"],
+        chunk_size = config["correlate_settings"]["chunk_size"],
+    log: config["outputs"]["output_dir"] + "log/average_read_counts.{cell_type}.sumcounts.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --pattern "{params.pattern}" \
+            --outfile {output.avg_read_depth} > {log} 2>&1
+        """
+
+
+rule proportional_fit_and_log:
+    input:
+        counts = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.raw.counts.h5",
+        avg_rd = config["outputs"]["output_dir"] + "expression/data/{cell_type}/sumcounts.avg_read_depth.json"
+    output:
+        out = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1.counts.h5",
+        weights = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1.weights.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["proportional_fit_and_log_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["proportional_fit_and_log_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["proportional_fit_and_log_time"]],
+    threads: config["proportional_fit_and_log_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/normalise.py",
+        out = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1pf."
+    log: config["outputs"]["output_dir"] + "log/proportional_fit_and_log.{cell_type}.{pool}.{sample}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --counts {input.counts} \
+            --avg_rd {input.avg_rd} \
+            --log1p \
+            --weights_out {output.weights} \
+            --out {output.out} > {log} 2>&1
+        """
+
+
+# Important to check if filter_split_counts is done to prevent snakemake errors.
+rule average_read_counts_pflogpf:
+    input:
+        #fsc_done = expand(config["outputs"]["output_dir"] + "expression/{pool}/{pool}.done", pool=POOLS, allow_missing=True),
+        weights = lambda wildcards: expand(config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1.weights.txt.gz", zip, **get_pool_samples(wildcards), allow_missing=True)
+    output:
+        avg_read_depth = config["outputs"]["output_dir"] + "expression/data/{cell_type}/pflog1.avg_read_depth.json"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["average_read_counts_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["average_read_counts_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["average_read_counts_time"]],
+    threads: config["average_read_counts_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/average_read_counts.py",
+	pattern = config["outputs"]["output_dir"] + "expression/*/data/*.{cell_type}.pflog1.weights.txt.gz",
+        feature_name = config["settings_extra"]["feature_name"],
+        min_obs_per_gene = config["correlate_settings"]["min_obs_per_gene"],
+        chunk_size = config["correlate_settings"]["chunk_size"],
+    log: config["outputs"]["output_dir"] + "log/average_read_counts.{cell_type}.pflog1.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --pattern "{params.pattern}" \
+            --outfile {output.avg_read_depth} > {log} 2>&1
+        """
+
+
+rule proportional_fit:
+    input:
+        counts = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1.counts.h5",
+        avg_rd = config["outputs"]["output_dir"] + "expression/data/{cell_type}/pflog1.avg_read_depth.json"
+    output:
+        out = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1pf.counts.h5",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["proportional_fit_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["proportional_fit_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["proportional_fit_time"]],
+    threads: config["proportional_fit_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/normalise.py",
+        out = config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1pf."
+    log: config["outputs"]["output_dir"] + "log/proportional_fit_and_log.{cell_type}.{pool}.{sample}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --counts {input.counts} \
+            --avg_rd {input.avg_rd} \
+            --out {output.out} > {log} 2>&1
+        """
+
+rule check_output:
+    input:
+        counts = lambda wildcards: expand(config["outputs"]["output_dir"] + "expression/{pool}/data/{pool}.{sample}.{cell_type}.pflog1pf.counts.h5", zip, **get_pool_samples(wildcards),  allow_missing=True)
+    output:
+        done = config["outputs"]["output_dir"] + "expression/expression/data/{cell_type}/{cell_type}.done"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["check_output_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["check_output_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["check_output_time"]]
+    threads: config["check_output_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+    log:
+         config["outputs"]["output_dir"] + "log/check.output.{cell_type}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} touch {output.done}
+        """

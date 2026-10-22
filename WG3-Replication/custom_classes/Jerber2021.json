@@ -1,0 +1,18 @@
+{
+  "class_name": "Jerber2021",
+  "all_effects_filename": "final.txt",
+  "top_effects_filename": null,
+  "n": null,
+  "columns": {
+    "gene_ensembl": "feature_id",
+    "SNP_chr:pos": [["chromosome", "chr([0-9]{1,2}|X|Y|MT)", ":"], ["chrStart", null, null]],
+    "alleles": [["snp_id", "(?:[0-9]{1,2}|X|Y|MT)_[0-9]+_([A-Z]+)_[A-Z]+", "/"], ["snp_id", "(?:[0-9]{1,2}|X|Y|MT)_[0-9]+_[A-Z]+_([A-Z]+)", null]],
+    "EA": "assessed_allele",
+    "beta": "beta",
+    "beta_se": "beta_se",
+    "nominal_pvalue": "p_value",
+    "permuted_pvalue": "empirical_feature_p_value",
+    "N": "n_e_samples",
+    "MAF": "maf"
+  }
+}

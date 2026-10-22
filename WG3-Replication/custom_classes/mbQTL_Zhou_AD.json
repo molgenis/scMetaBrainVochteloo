@@ -1,0 +1,15 @@
+{
+  "class_name": "mbQTL_Zhou_AD",
+  "all_effects_filename": "<CT>-AllEffects.txt",
+  "top_effects_filename": "<CT>-TopEffects.txt",
+  "n": null,
+  "columns": {
+    "gene_hgnc": "GeneSymbol",
+    "SNP_rsid": [["SNP", "(rs[0-9]+)", null]],
+    "SNP_chr:pos": [["SNPChr", "([0-9]{1,2}|X|Y|MT)", ":"], ["SNPPos", "([0-9]+)", null]],
+    "alleles": "SNPAlleles",
+    "EA": "SNPEffectAllele",
+    "zscore": [["DatasetZScores(Columbia_AD;MS;Mathys_AD;Roche_AD;Zhou_AD)", "[0-9.-]+;[0-9.-]+;[0-9.-]+;[0-9.-]+;([0-9.-]+)", null]],
+    "N": [["DatasetSampleSizes(Columbia_AD;MS;Mathys_AD;Roche_AD;Zhou_AD)", "[0-9]+;[0-9]+;[0-9]+;[0-9]+;([0-9]+)", null]]
+  }
+}

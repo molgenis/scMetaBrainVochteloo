@@ -1,0 +1,71 @@
+##############################################################################################################
+##### The following arguments need to be changed by the user to indicating file locations on your system #####
+##############################################################################################################
+inputs:
+  bind_path: /path/to/bind/to/mount ### List of paths to bind to Singularity. You can specify multiple directories by adding a "," between them. Eg. ${DIRECTORY1},${DIRECTORY2}
+  singularity_image: /path/to/singularity/image.sif ### The complete path to the singularity image that has all the softwares
+  repo_dir: /path/to/repo/dir/ ### Path to the github repository directory
+
+  discovery_method: method
+  discovery_path: /path/to/discovery/directory
+  discovery_all_filename: null
+  discovery_top_filename: null
+  discovery_name: discovery
+  discovery_class_settings: null
+
+  replication_method: method
+  replication_path: /path/to/replication/directory
+  replication_all_filename: null
+  replication_top_filename: null
+  replication_name: replication
+  replication_class_settings: null
+
+  cell_type_names: /path/to/cell_type_names
+  palette: /path/to/palette/file
+
+outputs:
+  output_dir: /path/to/parent/out/dir ### The path to the parent dir where you would like all outputs/results saved. This path must exist before running
+  log_dir: /path/to/log/out/dir ### base path where the log files will write to (not including 'log')
+
+settings:
+  only_matching: False
+
+  disc_inputs: {}
+  repl_inputs: {}
+
+  disc_cell_types: ['AST', 'EX', 'IN', 'MIC', 'OLI', 'OPC', 'PER']
+  repl_cell_types: ['AST', 'EX', 'IN', 'MIC', 'OLI', 'OPC', 'PER']
+
+  gene: "ensembl"
+  snp: "chr:pos"
+  pvalue: "permuted"
+  effect: "zscore"
+  allow_infer: False
+  rm_dupl: "none"
+  alpha: 0.05
+  fdr_calc_method: "qvalues"
+  log_modulus: False
+  extensions: ['png']
+  force: False
+  save: False
+  verbose: False
+
+cluster_time: {0: "05:59:00", 1: "23:59:00", 2: "6-23:59:00"} ### Options for dynamic time usage for cluster submissions of jobs
+
+##############################################################################################################
+##### The following arguments are common parameters that may need to be changed depending on the dataset #####
+##############################################################################################################
+rules:
+  replication_plot_memory: 4 ### Amount of gigs that will be used for memory and disk space per thread
+  replication_plot_threads: 1 ### Number of threads to use
+  replication_plot_time: 0 ### The time setting to use
+
+  plot_replication_stats_memory: 2 ### Amount of gigs that will be used for memory and disk space per thread
+  plot_replication_stats_threads: 1 ### Number of threads to use
+  plot_replication_stats_time: 0 ### The time setting to use
+
+############################################################################################################################################
+##### The following arguments in this section should not need to be changed/edited unless the default options do not work your dataset #####
+############################################################################################################################################
+settings_extra:
+  debug: False ### set logger to level DEBUG printing additional information.

@@ -1,0 +1,78 @@
+##############################################################################################################
+##### The following arguments need to be changed by the user to indicating file locations on your system #####
+##############################################################################################################
+inputs:
+  bind_path: ### directories that the singularity should have access to (comma seperated).
+  singularity_image: ### path to the singularity image containing the required software.
+  repo_dir: ### path to the base directory where the scripts are stored (i.e. parent of `scripts`).
+  gene_annotation: ### Path to gene annotation file
+  rb_genes: ### file containing ribosomal genes
+  mt_genes: ### file containing mitochondrial genes
+  gtf: ### `genes.gtf` of your alignment reference
+  # optional
+  cell_type_pairing: ### Comma seperated file with cell type name mapping
+
+  # Dataset specific inputs
+  poolsheet: ### tab separated file that has a header. Each line has a pool name used for the scRNA-seq directories, the BAM file, the barcode files
+  psam: ### WG1 imputation outpus psam
+  cell_annotation: ### tab seperated file with a header that denotes the relevant metadata of each cell
+  droplet_type_annotation: ### WG1 doublet detection output
+  cell_type_annotation: ### WG2 cell type classification output
+
+  # Cell specific input
+  e_gene_list: ### Gene list to filter on, optional. If provided, provide file per cell type as follows:
+	AST: /path/to/file.txt
+	END: /path/to/file.txt
+  co_egene_list: ### Gene list to filter on, optional, provide per cell type 
+  sample_selection: ### Sample selection, provide per cell type    
+
+outputs:
+  output_dir: ### the output directory.
+
+settings:
+  ancestry: "EUR"
+  cell_level: "L1"
+  cell_type: ["AST","END","EX","IN","MIC","OLI","OPC","PER"]
+  chromosomes: 
+  weight: "sumcounts" # alternitvely use "nonzero" 
+  dataset: 
+
+cluster_time: {0: "00:59:00", 1: "05:59:00",  2: "23:59:00", 3: "6-23:59:00"} ### Options for dynamic time usage for cluster submissions of jobs
+
+##############################################################################################################
+##### The following arguments are common parameters that may need to be changed depending on the dataset #####
+##############################################################################################################
+split_chromosome_memory: 4
+split_chromosome_threads: 1
+split_chromosome_time: 0
+
+average_read_counts_memory: 4
+average_read_counts_threads: 1
+average_read_counts_time: 0
+
+proportional_fit_and_log_memory: 4
+proportional_fit_and_log_threads: 1
+proportional_fit_and_log_time: 0
+
+proportional_fit_memory: 4
+proportional_fit_threads: 1
+proportional_fit_time: 0
+
+check_output_memory: 4
+check_output_threads: 1
+check_output_time: 0
+############################################################################################################################################
+##### The following arguments in this section should not need to be changed/edited unless the default options do not work your dataset #####
+############################################################################################################################################
+create_annotation_settings:
+  feature_name: "gene_name" ### the info column that in your gtf that describes the names of the genes in your expression matrix. Default `gene_name`.
+  autosomes_only: True ### whether or not to only include autosomal chromosomes. Default 'True'.
+
+settings_extra:
+  feature_name: "HGNC"
+  sample_aggregate: "Assignment"
+  debug: False
+
+correlate_settings:
+  min_obs_per_gene: 5
+  chunk_size: 10000

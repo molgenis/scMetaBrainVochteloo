@@ -1,0 +1,13 @@
+{
+  "class_name": "mbQTL",
+  "all_effects_filename": "<CT>-AllEffects.txt",
+  "top_effects_filename": "<CT>-TopEffects.txt",
+  "n": null,
+  "columns": {
+    "gene_hgnc": "GeneSymbol",
+    "SNP_rsid": [["SNP", "(rs[0-9]+)", null]],
+    "SNP_chr:pos": [["SNPChr", "([0-9]{1,2}|X|Y|MT)", ":"], ["SNPPos", "([0-9]+)", null]],
+    "alleles": "SNPAlleles",
+    "EA": "SNPEffectAllele"
+  }
+}

@@ -1,0 +1,84 @@
+---
+####################################################################################
+##### The following arguments are for indicating file locations on your system #####
+####################################################################################
+inputs:
+  singularity_image: /path/to/singularity/image.sif ### The complete path to the singularity image that has all the softwares
+  bind_path: /path/to/bind/to/mount ### List of paths to bind to Singularity. You can specify multiple directories by adding a "," between them. Eg. ${DIRECTORY1},${DIRECTORY2}
+  repo_dir: /path/to/repo/dir/ ### Path to the github repository directory
+  poolsheet_path: /path/to/sample/metadata/file.tsv ### tab separated file that has a header. Each line has a pool name used for the scRNA-seq directories
+  query_rds: /path/to/query_rds.rds ### RDS file you wish to classify
+
+refs:
+  ref_dir: /path/to/transcriptome/dir ### This is the path to the directory containing the reference files
+
+outputs: 
+  output_dir: /path/to/parent/out/dir ### The path to the parent dir where you would like all outputs/results saved. This path must exist before running.
+
+settings:
+  cite_seq: True ### Whether or not the reference contains CITE-seq data
+  refdata: "celltype.l2=celltype.l2" ### The labels to transfer for Azimuth annotation
+  split: True ### Whether to split the data into separate RDS files and run each in parallel or not
+  run_azimuth: True ### Whether to run azimuth cell annotation or not
+  run_hierscpred: True ### Whether to run Hierarchical scPred cell annotation or not
+  palette: null ### Custom color palette to use for visalisations
+
+cluster_time: {0: "05:59:00", 1: "23:59:00", 2: "6-23:59:00"} ### Options for dynamic time usage for cluster submissions of jobs
+
+##############################################################################################################
+##### The following arguments are common parameters that may need to be changed depending on the dataset #####
+##############################################################################################################
+preprocess:
+  split_memory: 16 ### The amount of memory (GB) used per thread for the split step
+  split_threads: 1 ### The number threads that will be used for the split step
+  split_time: 0 ### The time setting to use
+
+  make_seurat_memory: 32 ### The amount of memory (GB) used per thread for the make seurat step
+  make_seurat_threads: 1 ### The number threads that will be used for the make seurat step
+  make_seurat_time: 0 ### The time setting to use
+
+map:
+  azimuth_memory: 64 ### The amount of memory (GB) used per thread for the azimuth step
+  azimuth_threads: 1 ### The number threads that will be used for the azimuth step
+  azimuth_time: 0 ### The time setting to use
+
+  hierscpred_memory: 64 ### The amount of memory (GB) used per thread for the hier. scpred step
+  hierscpred_threads: 1 ### The number threads that will be used for the hier. scpred step
+  hierscpred_time: 0 ### The time setting to use
+
+reduce:
+  reduce_memory: 4 ### The amount of memory (GB) used per thread for the reduce step
+  reduce_threads: 1 ### The number threads that will be used for the reduce step
+  reduce_time: 0 ### The time setting to use
+
+visualise:
+  visualise_memory: 4 ### The amount of memory (GB) used per thread for the visualise step
+  visualise_threads: 1 ### The number threads that will be used for the visualise step
+  visualise_time: 0 ### The time setting to use
+
+compare:
+  compare_memory: 4 ### The amount of memory (GB) used per thread for the compare step
+  compare_threads: 1 ### The number threads that will be used for the compare step
+  compare_time: 0 ### The time setting to use
+
+############################################################################################################################################
+##### The following arguments in this section should not need to be changed/edited unless the default options do not work your dataset #####
+############################################################################################################################################
+refs_extra:
+  azimuth_reference: "pbmc_multimodal.h5seurat" ### used for azimuth classification
+  hierscpred_reference: "hier_scpred.RDS" ### hierarchical trained model for scPred classification
+
+settings_extra:
+  ignore_file_checks: False ### Boolean to ignore missing file errors in the Snakefile.
+  memory_buffer: 1 ### Buffer to prevent memory overflow, available memory is reduced by this amount in GB
+
+map_extra:
+  azimuth_plan: "sequential" ### Strategy to resolve future: sequential, multisession, multicore, cluster, remote, transparent
+  hierscpred_thr: 0 ### Threshold for rejection. By default no rejection is implemented
+  hierscpred_iter: 10 ### Maximum number or Harmony iterations
+  hierscpred_plan: "sequential" ### Strategy to resolve future: sequential, multisession, multicore, cluster, remote, transparent
+
+compare_extra:
+  xaxis: "predicted.celltype.l2" ### Column in metadata
+  yaxis: "scpred_prediction" ### Column in metadata
+  order: "CD4 Naive;CD4 TCM;CD4 TEM;CD4 CTL;Treg;CD4 Proliferating;CD8 Naive;CD8 TCM;CD8 TEM;CD8 Proliferating;gdT;MAIT;ILC;dnT;NK;NK_CD56bright;NK Proliferating;B naive;B intermediate;B memory;Plasmablast;CD14 Mono;CD16 Mono;cDC1;cDC2;pDC;ASDC;HSPC;Platelet;Eryth;Doublet" ### Order for the labels in both axes to match cell type hierarchy

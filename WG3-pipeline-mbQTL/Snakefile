@@ -1,0 +1,1873 @@
+#!/usr/bin/env python
+import os
+import re
+
+# Set logger level.
+if config["settings_extra"]["debug"]:
+    logger.set_level("DEBUG")
+
+# Validate input.
+if config["general_settings"]["n_genes"] is not None and config["general_settings"]["n_genes"] <= 0:
+    logger.error("Critical, n_genes needs to be larger than zero.\n\nExiting.")
+    exit("InvalidInput")
+
+# Check required input arguments.
+if config["inputs"]["singularity_image"] is None or not os.path.exists(config["inputs"]["singularity_image"]):
+    logger.error("Critical, singularity_image does not exist.\n\nExiting.")
+    exit("MissingsingularityImage")
+if config["inputs"]["repo_dir"] is None or not os.path.exists(config["inputs"]["repo_dir"]):
+    logger.error("Critical, repo_dir does not exist.\n\nExiting.")
+    exit("MissingRepoDir")
+if config["inputs"]["annotation"] is None or not os.path.exists(config["inputs"]["annotation"]):
+    logger.error("Critical, annotation does not exist.\n\nExiting.")
+    exit("MissingsingAnnotation")
+if config["inputs"]["vcf"] is None or not os.path.exists(config["inputs"]["vcf"]):
+    logger.error("Critical, vcf does not exist.\n\nExiting.")
+    exit("MissingsingVCF")
+if config["inputs"]["exp"] is None or not os.path.exists(config["inputs"]["exp"]):
+    logger.error("Critical, exp does not exist.\n\nExiting.")
+    exit("MissingsingExp")
+if config["inputs"]["gte"] is None or not os.path.exists(config["inputs"]["gte"]):
+    logger.error("Critical, gte does not exist.\n\nExiting.")
+    exit("MissingsingGTE")
+if config["outputs"]["output_dir"] is None:
+    logger.error("Critical, the output_dir cannot be empty.\n\nExiting.")
+    exit("MissingOutputDir")
+
+# Check optional input arguments.
+if config["inputs"]["cov"] is not None and not os.path.exists(config["inputs"]["cov"]):
+    logger.error("Critical, cov does not exist.\n\nExiting.")
+    exit("InvalidCov")
+if config["inputs"]["expgroups"] is not None and not os.path.exists(config["inputs"]["expgroups"]):
+    logger.error("Critical, expgroups does not exist.\n\nExiting.")
+    exit("InvalidExpGroups")
+if config["inputs"]["genelimit"] is not None and not os.path.exists(config["inputs"]["genelimit"]):
+    logger.error("Critical, genelimit does not exist.\n\nExiting.")
+    exit("InvalidGeneLimit")
+if config["inputs"]["snplimit"] is not None and not os.path.exists(config["inputs"]["snplimit"]):
+    logger.error("Critical, snplimit does not exist.\n\nExiting.")
+    exit("InvalidSNPLimit")
+if config["inputs"]["snpgenelimit"] is not None and not os.path.exists(config["inputs"]["snpgenelimit"]):
+    logger.error("Critical, snpgenelimit does not exist.\n\nExiting.")
+    exit("InvalidSNPGeneLimit")
+if config["inputs"]["plot_eqtls"] is not None and not os.path.exists(config["inputs"]["plot_eqtls"]):
+    logger.error("Critical, plot_eqtls does not exist.\n\nExiting.")
+    exit("InvalidPloteQTLs")
+if config["qtl_settings_extra"]["mbqtl_jar"] is not None and not os.path.exists(config["qtl_settings_extra"]["mbqtl_jar"]):
+    logger.error("Critical, mbQTL jar does not exist.\n\nExiting.")
+    exit("InvalidmbQTLjar")
+
+# Checking settings with options to be valid.
+if config["general_settings"]["force_mega"] not in ["all", "cov", "qtl", "none", None]:
+    logger.error("Critical, force_mega must be 'all', 'cov', 'qtl', 'none', or empty.\n\nExiting.")
+    exit("InvalidForceMega")
+if config["general_settings"]["signif_column"] not in ["MetaP", "BetaAdjustedMetaP", "BonfAdjustedMetaP", "BonfBHAdjustedMetaP", "bh_fdr", "qval"]:
+    logger.error("Critical, signif_column must be 'MetaP', 'BetaAdjustedMetaP', 'BonfAdjustedMetaP', 'BonfBHAdjustedMetaP', 'bh_fdr', or 'qval'.\n\nExiting.")
+    exit("InvalidSignifColumn")
+if config["qtl_settings"]["analysis_type"] not in ["cis", "trans", "cistrans"]:
+    logger.error("Critical, analysis_type must be 'cis', 'trans', or 'cistrans'.\n\nExiting.")
+    exit("InvalidAnalysisType")
+if config["qtl_settings"]["meta_analysis_method"] not in ["empzmeta", "fisherzmeta", "fisherzmetarandom"]:
+    logger.error("Critical, meta_analysis_method must be 'empzmeta', 'fisherzmeta', or 'fisherzmetarandom'.\n\nExiting.")
+    exit("InvalidMetaAnalysisMethod")
+if config["qtl_settings"]["outputall"] not in [False, True, "chr"]:
+    logger.error("Critical, outputall must be True, False, or 'chr'.\n\nExiting.")
+    exit("InvalidOutputall")
+if config["qtl_settings"]["outputall_chr_sortby"] not in ["sortbyz", "sortbysnppos", "sortbygenepos"]:
+    logger.error("Critical, outputall_chr_sortby must be 'sortbyz', 'sortbysnppos', or 'sortbygenepos'.\n\nExiting.")
+    exit("InvalidOutputallChrSortby")
+if not config["create_annotation_settings"]["autosomes_only"]:
+    logger.error("Critical, inclusion of non-autosomal chromosomes is currently not supported.\n\nExiting.")
+    exit("InvalidAutosomalOnly")
+
+# TODO: remove once implemented.
+if config["qtl_settings"]["outputall_chr_sortby"] == "sortbysnppos":
+    logger.error("Critical, outputall_chr_sortby option 'sortbysnppos' is not implemented yet.\n\nExiting.")
+    exit("InvalidOutputallChrSortby")
+    config["qtl_settings"]["outputall_chr_sortby"] = "sortbygenepos"
+
+
+# Replace non required variables that are None with empty strings.
+for input_variable in ["cov", "expgroups", "genelimit", "snplimit", "snpgenelimit", "plot_eqtls"]:
+    if config["inputs"][input_variable] is None:
+        config["inputs"][input_variable] = ""
+
+# Set the default output prefix.
+if config["outputs"]["output_prefix"] is None:
+    config["outputs"]["output_prefix"] = "mbQTL"
+
+# Reformat the selected number of PCs into a list.
+if config["general_settings"]["n_pcs"] is None:
+    config["general_settings"]["n_pcs"] = []
+if not isinstance(config["general_settings"]["n_pcs"], list):
+    config["general_settings"]["n_pcs"] = [config["general_settings"]["n_pcs"]]
+
+# Reformat force mega in a list and replace 'all' with all options.
+if config["general_settings"]["force_mega"] == "all":
+    config["general_settings"]["force_mega"] = ["cov", "qtl"]
+else:
+    config["general_settings"]["force_mega"] = [config["general_settings"]["force_mega"]]
+
+# Reformat outputall and fill in the related export_all_effects variable.
+EXPORT_ALL_EFFECTS = False
+if config["qtl_settings"]["outputall"] == "chr":
+    config["qtl_settings"]["outputall"] = False
+    EXPORT_ALL_EFFECTS = True
+    logger.debug("\tSetting outputall to False and EXPORT_ALL_EFFECTS to True.")
+
+# Define the chromosomes.
+CHROMOSOMES = [str(i) for i in range(1, 23)]
+if not config["create_annotation_settings"]["autosomes_only"]:
+    CHROMOSOMES.extend(["X", "Y", "MT"])
+
+# Define the sortby columns.
+SORTBY_SEQUENCE_COL = {"sortbyz": "", "sortbysnppos": "SNPChr", "sortbygenepos": "GeneChr"}
+SORTBY_POS_COL = {"sortbyz": "", "sortbysnppos": "SNPPos", "sortbygenepos": "GenePos"}
+
+# Add trailing /.
+if not config["inputs"]["repo_dir"].endswith("/"):
+    config["inputs"]["repo_dir"] += "/"
+if not config["outputs"]["output_dir"].endswith("/"):
+    config["outputs"]["output_dir"] += "/"
+
+# Check setting combinations that do not make sense and update accordingly.
+logger.warning("Updating settings:")
+if config["settings_extra"]["force"]:
+    logger.warning("\tWarning, unlogical input arguments will not be automatically updated. Use with caution!")
+else:
+    if config["general_settings"]["visualise"] and not config["general_settings"]["map_qtls"]:
+        logger.warning("\tWarning, setting visualise to False since map_qtls is False.")
+        config["general_settings"]["visualise"] = False
+    if (config["inputs"]["snpgenelimit"] != "" or config["inputs"]["snplimit"] != "") and config["general_settings"]["use_snpannotation"]:
+        logger.warning("\tWarning, setting use_snpannotation to False since snpgenelimit / snplimit is used.")
+        config["general_settings"]["use_snpannotation"] = False
+    if not config["general_settings"]["filter_vcf"] and config["general_settings"]["filter_vcf_r2"] is not None:
+        logger.warning("\tWarning, setting filter_vcf to True since filter_vcf_r2 is not used (this cannot be filtered on in mbQTL on the fly).")
+        config["general_settings"]["filter_vcf"] = True
+    if config["inputs"]["snpgenelimit"] != "" and not config["qtl_settings"]["outputall"]:
+        logger.warning("\tWarning, setting outputall to True since snpgenelimit is used.")
+        config["qtl_settings"]["outputall"] = True
+    if config["inputs"]["snpgenelimit"] != "" and not config["qtl_settings"]["perm"] == 0:
+        logger.warning("\tWarning, setting perm to 0 since snpgenelimit is used.")
+        config["qtl_settings"]["perm"] = 0
+    if config["inputs"]["gte"].endswith(".smf") and config["qtl_settings"]["nrdatasets"] > 1:
+        logger.warning("\tWarning, setting nrdatasets to 1 since the input gte is a single dataset ('.smf').")
+        config["qtl_settings"]["nrdatasets"] = 1
+    if "qtl" in config["general_settings"]["force_mega"] and config["qtl_settings"]["nrdatasets"] > 1:
+        logger.warning("\tWarning, setting nrdatasets to 1 since force_mega for QTL mapping is True.")
+        config["qtl_settings"]["nrdatasets"] = 1
+    if config["inputs"]["cov"] == config["inputs"]["gte"] and config["inputs"]["gte"].endswith(".smf"):
+        logger.warning("\tWarning, setting cov to 'null' since the input gte endswith '.smf' and therefore does not "
+                       "contain dataset information to include as covariates.")
+        config["inputs"]["cov"] = ""
+
+# Set the default value for the variant filter.
+if config["general_settings"]["filter_vcf_maf"] is None:
+    config["general_settings"]["filter_vcf_maf"] = config["qtl_settings"]["maf"]
+if config["general_settings"]["filter_vcf_cr"] is None:
+    config["general_settings"]["filter_vcf_cr"] = config["qtl_settings"]["cr"]
+if config["general_settings"]["filter_vcf_hwep"] is None:
+    config["general_settings"]["filter_vcf_hwep"] = config["qtl_settings"]["hwep"]
+
+# Check setting combinations that are not allowed.
+if config["qtl_settings"]["nrdatasets"] > 1 and config["inputs"]["gte"].endswith(".smf"):
+    logger.error("Critical, setting the minimum number of datasets required in "
+                 "meta-analysis (nrdatasets) > 1 will result in no results "
+                 "since your input GTE has no dataset column.")
+    exit()
+if config["qtl_settings"]["replacemissinggenotypes"] and config["qtl_settings"]["perm"] == 0:
+    logger.error("Critical, replacemissinggenotypes is True while perm is 0. This setting should "
+                 "only be True when both genotypes and expression data have missing "
+                 "values and perm > 0.\n\nExiting.")
+    exit()
+
+# Some friendly reminders.
+logger.warning("\nUsage warnings:")
+if config["qtl_settings"]["nrdatasets"] > 1:
+    logger.warning("\tWarning, setting the minimum number of datasets required in "
+                  "meta-analysis (nrdatasets) > 1 will result in no results "
+                  "if your input GTE only contains one dataset.")
+if config["inputs"]["gte"].endswith(".smf"):
+    logger.warning("\tWarning, your input gte ends with '.smf'. If there is any datasets info in "
+                   "the third column it will be ignored and all analyses will be performed over "
+                   "all samples at once. This is equivalent to setting force_mega: all.")
+else:
+    logger.warning("\tWarning, your input gte ends with '.txt'. The info in the third column will "
+                   "be used as dataset. The principal component calculations and corrections "
+                   "will be performed per dataset. If there is only one dataset, all analyses will "
+                   "be performed over all samples at once. Use force_mega: cov to force the "
+                   "program to perform PCA correction over all samples.")
+if config["inputs"]["cov"] == config["inputs"]["gte"]:
+    logger.warning("\tWarning, your input cov is equal to your input gte. A covariate will be "
+                   "added based on the dataset column of your gte file.")
+if not config["general_settings"]["filter_vcf"]:
+    logger.warning("\tWarning, your input VCF will not be prefiltered. All variants, other than "
+                   "those that are skipped by mbQTL based on MAF en CR, will be tested.")
+if config["inputs"]["snpgenelimit"] != "" and config["run_qtl_time"] != 0:
+    logger.warning("\tWarning, you are only testing a select number of effects but the runtime for each "
+                   "job is max {}. If you tink this is too long you should decrease "
+                   "run_qtl_time to e.g. 0.".format(config["cluster_time"][config["run_qtl_time"]]))
+if config["inputs"]["snpgenelimit"] == "" and config["general_settings"]["n_genes"] is None and config["run_qtl_time"] == 0:
+    logger.warning("\tWarning, you are running all tests in one job file but the runtime for this "
+                   "job is max {}. If you tink this is too short you should increase "
+                   "run_qtl_time to 1 or higher.".format(config["cluster_time"][config["run_qtl_time"]]))
+if config["inputs"]["snpgenelimit"] == "" and config["general_settings"]["n_genes"] is not None and config["run_qtl_time"] != 0:
+    logger.warning("\tWarning, you are running tests in multiple job files but the runtime for each "
+                   "job is max {}. If you tink this is too long you should decrease "
+                   "run_qtl_time to e.g. 0.".format(config["cluster_time"][config["run_qtl_time"]]))
+if config["qtl_settings_extra"]["mbqtl_jar"] is not None:
+    logger.warning("\tWarning, using a different mbQTL jar file than is included in the singularity image. This may cause issues if settings are added or removed.")
+
+logger.info("\nEvaluating input:")
+
+# Automatically determine the mode of the input.
+if config["inputs"]["cov"] == "" and not config["general_settings"]["n_pcs"]:
+    input_mode = "default"
+elif config["inputs"]["cov"] != "" and not config["general_settings"]["n_pcs"]:
+    input_mode = "cov"
+elif config["inputs"]["cov"] == "" and config["general_settings"]["n_pcs"]:
+    input_mode = "XPcs"
+elif config["inputs"]["cov"] != "" and config["general_settings"]["n_pcs"]:
+    input_mode = "covXPcs"
+else:
+    logger.error("Critical, could not determine input mode.\n\nExiting")
+    exit()
+logger.info("\tYour input is in mode: {}.".format(input_mode))
+
+# Define the tests that the user wants to run.
+modes = ["all", "default", "cov", "covXPcs", "XPcs"]
+selected_modes = set()
+if config["general_settings"]["include_modes"] is None:
+    # No user input defaults to the input mode.
+    config["general_settings"]["include_modes"] = input_mode
+if not isinstance(config["general_settings"]["include_modes"], list):
+    # Force input into a list.
+    config["general_settings"]["include_modes"] = [config["general_settings"]["include_modes"]]
+for mode in config["general_settings"]["include_modes"]:
+    # Validate that each mode is known.
+    if mode not in modes:
+        logger.error("Critical, unexpected mode '{}'.\n\nExiting.".format(mode))
+        exit()
+# Construct the selected modes.
+if "all" in config["general_settings"]["include_modes"]:
+    selected_modes = set(modes)
+else:
+    selected_modes = set(config["general_settings"]["include_modes"])
+logger.info("\tYou selected input to execute the following modes: {}.".format(", ".join(selected_modes)))
+
+# Combine the output modes (henceforth named covariates).
+covariates = []
+if "default" in selected_modes:
+    covariates.append("default")
+if "cov" in selected_modes:
+    if config["inputs"]["cov"] == "":
+        logger.warning("Warning, you requested to run mode 'cov' but the 'cov' input is empty. Skipping mode.")
+    else:
+        covariates.append("cov")
+if "XPcs" in selected_modes:
+    if not config["general_settings"]["n_pcs"]:
+        logger.warning("Warning, you requested to run mode 'XPcs' but the 'n_pcs' input is empty. Skipping mode.")
+    else:
+        for n_pcs in config["general_settings"]["n_pcs"]:
+            if n_pcs == 0 and "default" not in covariates:
+                covariates.append("default")
+                continue
+            covariates.append(str(n_pcs) + "Pcs")
+if "covXPcs" in selected_modes:
+    if config["inputs"]["cov"] == "":
+        logger.warning("Warning, you requested to run mode 'covXPcs' but the 'cov' input is empty. Skipping mode.")
+    elif not config["general_settings"]["n_pcs"]:
+        logger.warning("Warning, you requested to run mode 'covXPcs' but the 'n_pcs' input is empty. Skipping mode.")
+    else:
+        for n_pcs in config["general_settings"]["n_pcs"]:
+            if n_pcs == 0 and "cov" not in covariates:
+                covariates.append("cov")
+                continue
+            covariates.append("cov" + str(n_pcs) + "Pcs")
+if len(covariates) > 0:
+    logger.info("\tGenerating output for the following modes: {}.\n".format(", ".join(covariates)))
+
+
+def get_basename(fpath):
+    if fpath == "":
+        return "None"
+    basename = os.path.basename(fpath)
+    for suffix in [".bgz", ".gz", ".gtf", ".txt", ".tsv", ".csv", ".vcf"]:
+        basename = re.sub(re.escape(suffix) + '$', '', basename)
+    return basename
+
+logger.debug("Basenames:")
+BASENAMES = {}
+for input_key in ["annotation", "vcf", "exp", "gte", "cov", "expgroups", "genelimit", "snplimit", "snpgenelimit", "plot_eqtls"]:
+    basename = get_basename(config["inputs"][input_key])
+    logger.debug("\t{}: {}".format(input_key, basename))
+    BASENAMES[input_key] = basename
+logger.debug("")
+    
+
+wildcard_constraints:
+    n_pcs = "[0-9]+",
+    annot_basename = BASENAMES["annotation"],
+    vcf_basename = BASENAMES["vcf"],
+    exp_basename = BASENAMES["exp"],
+    sgl_basename = BASENAMES["snpgenelimit"],
+    output_prefix = config["outputs"]["output_prefix"],
+    signif_filter = config["general_settings"]["signif_column"] + str(config["general_settings"]["alpha"]),
+    sortby = config["qtl_settings"]["outputall_chr_sortby"],
+    chr = "[0-9]{1,2}|X|Y|MT"
+
+
+def print_wildcards(wildcards):
+    out = []
+    for key, value in wildcards.items():
+        out.append(key + "=" + value)
+    return ", ".join(out)
+
+
+def get_input(wildcards):
+    """
+    :rule: all
+    :param wildcards:
+    :return: the required input files.
+    """
+    logger.debug("rule all - get_input({})".format(print_wildcards(wildcards)))
+    input = []
+    exp_basename = get_basename(config["inputs"]["exp"])
+
+    if config["general_settings"]["preflight_checks"]:
+        input_fpath = "preflights.finished".format(**wildcards)
+        logger.debug("\trequesting output of rule 'preflight_checks': " + input_fpath)
+        input.append(config["outputs"]["output_dir"] + input_fpath)
+        return input
+
+    if config["general_settings"]["plot_pca"]:
+        input_fpath = "pca/all/{exp_basename}.done".format(**wildcards, exp_basename=exp_basename)
+        logger.debug("\trequesting output of rule 'pca' on the input 'exp': " + input_fpath)
+        input.append(config["outputs"]["output_dir"] + input_fpath)
+
+        corr_covariates = [cov for cov in covariates if cov not in ["default", "0Pcs"]]
+        if "cov" in config["general_settings"]["force_mega"] and len(corr_covariates) > 0:
+            input_fpaths = expand(config["outputs"]["output_dir"] + "pca/all/{exp_basename}.{cov}.CovariatesRemovedOLS.done", exp_basename=exp_basename, cov=corr_covariates)
+            logger.debug("\trequesting output of rule 'pca' on the output of rule 'regressor': " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+            input.extend(input_fpaths)
+        else:
+            if "cov" in covariates:
+                input_fpath = "pca/all/{exp_basename}.cov.CovariatesRemovedOLS.done".format(**wildcards, exp_basename=exp_basename)
+                logger.debug("\trequesting output of rule 'pca' on the output of rule 'regressor': " + input_fpath)
+                input.append(config["outputs"]["output_dir"] + input_fpath)
+
+            # Per dataset PCA output is not required if (1) the number of PCs removed is >0, and
+            # (2) the input file is not smf since those filetypes are guaranteed to have 1 dataset.
+            ds_corr_covariates = [cov for cov in covariates if cov not in ["default", "cov", "0Pcs", "cov0Pcs"]]
+            if len(ds_corr_covariates) > 0 and not config["inputs"]["gte"].endswith(".smf"):
+                datasets = get_datasets(wildcards)
+
+                # No need to merge if there is only one dataset.
+                if len(get_datasets(wildcards)) == 1:
+                    input_fpaths = expand(config["outputs"]["output_dir"] + "pca/all/{exp_basename}.{cov}.CovariatesRemovedOLS.done", exp_basename=exp_basename, cov=ds_corr_covariates)
+                    logger.debug("\trequesting output of rule 'pca' on the output of rule 'regressor' since there is 1 dataset: " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+                    input.extend(input_fpaths)
+                else:
+                    input_fpaths = expand(config["outputs"]["output_dir"] + "pca/{dataset}/{exp_basename}.done", dataset=datasets, exp_basename=exp_basename)
+                    logger.debug("\trequesting output of rule 'pca' on the output of rule 'filter_exp' for a specific dataset: " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+                    input.extend(input_fpaths)
+
+                    input_fpaths = expand(config["outputs"]["output_dir"] + "pca/{dataset}/{exp_basename}.{cov}.CovariatesRemovedOLS.done", dataset=datasets, exp_basename=exp_basename, cov=ds_corr_covariates)
+                    logger.debug("\trequesting output of rule 'pca' on the output of rule 'regressor' for a specific dataset: " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+                    input.extend(input_fpaths)
+
+                    input_fpaths = expand(config["outputs"]["output_dir"] + "pca/merged/{exp_basename}.{cov}.CovariatesRemovedOLS.done", exp_basename=exp_basename, cov=ds_corr_covariates)
+                    logger.debug("\trequesting output of rule 'pca' on the output of rule 'merge_exps': " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+                    input.extend(input_fpaths)
+
+    if config["general_settings"]["map_qtls"]:
+        # Output of mbQTL.
+        input_fpaths = expand(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffectsWithMultTest-{signif_column}{alpha}significant.txt", cov=covariates, output_prefix=config["outputs"]["output_prefix"], signif_column=config["general_settings"]["signif_column"], alpha=config["general_settings"]["alpha"])
+        logger.debug("\trequesting output of rule 'run_qtl': " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+        input.extend(input_fpaths)
+
+        # Output of results.
+        if covariates:
+            input_fpath = "output/mbQTL-results.txt"
+            logger.debug("\trequesting output of rule 'results': " + input_fpath)
+            input.append(config["outputs"]["output_dir"] + input_fpath)
+
+        if config["inputs"]["plot_eqtls"] != "":
+            # Output op plot_eqtl
+            input_fpaths = expand(config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-{plot_eqtls_basename}-qtlplot.finished", cov=covariates, output_prefix=config["outputs"]["output_prefix"], plot_eqtls_basename=BASENAMES["plot_eqtls"])
+            logger.debug("\trequesting output of rule 'plot_eqtl': " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+            input.extend(input_fpaths)
+
+        if config["general_settings"]["visualise"]:
+            # Output of visualise.
+            input_fpaths = expand(config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects-{signif_column}{alpha}significant-visualise.done", cov=covariates, output_prefix=config["outputs"]["output_prefix"], signif_column=config["general_settings"]["signif_column"], alpha=config["general_settings"]["alpha"])
+            logger.debug("\trequesting output of rule 'visualise': " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+            input.extend(input_fpaths)
+
+    if EXPORT_ALL_EFFECTS:
+        # Output of export_all_effects.
+        input_fpaths = expand(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}.finished", cov=covariates, output_prefix=config["outputs"]["output_prefix"], chr=CHROMOSOMES, sortby=config["qtl_settings"]["outputall_chr_sortby"])
+        logger.debug("\trequesting output of rule 'export_all_effects': " + ", ".join([fpath.replace(config["outputs"]["output_dir"], "") for fpath in input_fpaths]))
+        input.extend(input_fpaths)
+
+    return input
+
+
+def get_gte(wildcards):
+    """
+    :rule: split_gte, filter_exp, pca, remove_gte_dataset, and run_qtl
+    :param wildcards: gte_basename / dataset, exp_basename / dataset, infile / gte_basename / cov, batch
+    :return: return the output of smf_to_gte if the input gte is a '.smf' file, else return the input gte.
+    """
+    logger.debug("rule split_gte, filter_exp, pca, remove_gte_dataset, run_qtl - get_gte({})".format(print_wildcards(wildcards)))
+    if config["inputs"]["gte"].endswith(".smf"):
+        # not using wildcards since some rules have gte_basename and some do not.
+        fpath = "gte/{gte_basename}/gte.txt".format(gte_basename=BASENAMES["gte"])
+        logger.debug("\treturn output of rule 'smf_to_gte': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    fpath = config["inputs"]["gte"]
+    logger.debug("\treturn input 'gte': " + fpath)
+    return fpath
+
+
+def get_variants(wildcards):
+    """
+    :rule: filter_vcf
+    :param wildcards: vcf_basename, limit_file
+    :return: return the snpgenelimit if it is given, else the snplimit if it is given.
+    """
+    logger.debug("rule filter_vcf - get_variants({})".format(print_wildcards(wildcards)))
+
+    if wildcards.limit_file == BASENAMES["snpgenelimit"]:
+        fpath = "limit/{sgl_basename}_variants.txt".format(sgl_basename=BASENAMES["snpgenelimit"])
+        logger.debug("\treturn output of rule 'split_snpgenelimit': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+    elif wildcards.limit_file == BASENAMES["snplimit"]:
+        fpath = config["inputs"]["snplimit"]
+        logger.debug("\treturn input 'snplimit': " + fpath)
+        return fpath
+    elif wildcards.limit_file == "OnlyQCFilter":
+        return []
+    else:
+        logger.error("Critical, Unexpected value for limit_file in get_variants: {}\n\nExiting.".format(wildcards.limit_file))
+        exit()
+
+    logger.debug("\treturning []")
+    return []
+
+
+def get_dataset_gte(wildcards):
+    """
+    :rule: pca and filter_exp
+    :param wildcards: dataset, infile /  dataset, exp_basename
+    :return: return the gte filtered on a specific dataset unless the dataset is merged / all in which case the whole gte
+    is returned.
+    """
+    logger.debug("rule pca, filter_exp - get_dataset_gte({})".format(print_wildcards(wildcards)))
+    if wildcards.dataset in ["merged", "all"]:
+        logger.debug("\tcalling 'get_gte' function")
+        fpath = get_gte(wildcards)
+        logger.debug("\treturning: " + fpath)
+        return fpath
+
+    fpath = "gte/{gte_basename}/split/gte_{dataset}.txt".format(**wildcards, gte_basename=BASENAMES["gte"])
+    logger.debug("\treturn output of checkpoint 'split_gte': " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_pca_expr(wildcards):
+    """
+    :rule: pca
+    :param wildcards: dataset, infile
+    :return: determine the input expression file over which to perform PCA. If the infile is the input exp basename
+    we know that no covariates should be corrected so we can return either the whole matrix (exp input) or a filtered
+    version based on the dataset (filter_exp). Else, we need a covariate corrected matrix. If the dataset is merged this
+    means we need to combine the regressor output of multiple datasets from merge_exps. Else, we turn the regressor output
+    directly for that dataset.
+    """
+    logger.debug("rule pca - get_pca_expr({})".format(print_wildcards(wildcards)))
+
+    if wildcards.infile == BASENAMES["exp"]:
+        # i.e. no covariate correction is needed. Only need to pick between the
+        # full input matrix or a subset of the input matrix.
+        if wildcards.dataset == "all" or "cov" in config["general_settings"]["force_mega"] or config["inputs"]["gte"].endswith(".smf") or len(get_datasets(wildcards)) == 1:
+            fpath = config["inputs"]["exp"]
+            logger.debug("\treturning input 'exp': " + fpath)
+            return fpath
+
+        fpath = "exp/{dataset}/{infile}.txt.gz".format(**wildcards)
+        logger.debug("\treturning output of rule 'filter_exp' for a specific dataset: " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    # covariate corrected per dataset merged into one file.
+    if wildcards.dataset == "merged":
+        fpath = "regressor/merged.{infile}.txt.gz".format(**wildcards)
+        logger.debug("\treturning output of rule 'merge_exps': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    # else, covariate corrected per dataset.
+    fpath = "regressor/{dataset}/{infile}.txt.gz".format(**wildcards)
+    logger.debug("\treturning output of rule 'regressor': " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_regressor_exp(wildcards):
+    """
+    :rule: regressor
+    :param wildcards: dataset, exp_basename, cov
+    :return: return the input expression. If dataset is all we return the input exp file. Else, we return the
+    output of filter_exp for that dataset.
+    """
+    logger.debug("rule regressor - get_regressor_exp({})".format(print_wildcards(wildcards)))
+    if wildcards.dataset == "all":
+        fpath = config["inputs"]["exp"]
+        logger.debug("\treturning input 'exp': " + fpath)
+        return fpath
+
+    fpath = "exp/{dataset}/{exp_basename}.txt.gz".format(**wildcards)
+    logger.debug("\treturning output of rule 'filter_exp' for a specific dataset: " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_cov(wildcards):
+    """
+    :rule: merge_covs, regressor
+    :param wildcards: dataset, exp_basename, n_pcs / dataset, exp_basename, cov
+    :return: either a dataset covariate file based on the gte input or the cov input file.
+    """
+    logger.debug("rule merge_covs, regressor - get_cov({})".format(print_wildcards(wildcards)))
+    if config["inputs"]["cov"] == "":
+        logger.error("Critical, unexpected empty value for input 'cov' in get_cov.\n\nExiting.".format(wildcards.cov))
+        exit()
+    elif (config["inputs"]["cov"] == config["inputs"]["gte"] and not config["inputs"]["gte"].endswith(".smf")):
+        fpath = "cov/{gte_basename}/cov.txt.gz".format(**wildcards, gte_basename=BASENAMES["gte"])
+        logger.debug("\treturning output of rule 'gte_to_dataset_cov': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+    else:
+        fpath = config["inputs"]["cov"]
+        logger.debug("\treturning input 'cov': " + fpath)
+        return fpath
+
+    logger.debug("\treturning: []")
+    return []
+
+
+def get_regressor_cov(wildcards):
+    """
+    :rule: regressor
+    :param wildcards: dataset, exp_basename, cov
+    :return: depending on the covariates the input is selected. No covariates should not happen so an error is thrown. If
+    cov contains only covariates and no PCs (i.e. cov or cov0Pcs) the input covariate file is returned. If cov contains only
+    Pcs and no covariates the output of pca is returned. If cov contains both covariates and PCs the output of merge_covs is returned.
+    """
+    logger.debug("rule regressor - get_regressor_cov({})".format(print_wildcards(wildcards)))
+    if wildcards.cov == "default" or wildcards.cov == "0Pcs":
+        logger.error("Critical, unexpected covariate '{}' wildcard in get_regressor_cov.\n\nExiting.".format(wildcards.cov))
+        exit()
+    elif wildcards.cov == "cov" or wildcards.cov == "cov0Pcs":
+        # Only cov, no PCs.
+        logger.debug("\tcalling 'get_cov' function")
+        fpath = get_cov(wildcards)
+        logger.debug("\treturning: " + fpath)
+        return fpath
+    elif not wildcards.cov.startswith("cov") and wildcards.cov.endswith("Pcs"):
+        # No Cov, only PCs.
+        fpath = "pca/{dataset}/{exp_basename}.{cov}.txt.gz".format(**wildcards)
+        logger.debug("\treturning output of rule 'pca' for a specific dataset: " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    # Cov and PCs.
+    fpath = "cov/{dataset}/{exp_basename}.{cov}.txt.gz".format(**wildcards)
+    logger.debug("\treturning output of rule 'merge_covs' for a specific dataset: " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_datasets(wildcards):
+    """
+    :rule: run_qtl and merge_exps
+    :param wildcards: cov, batch / exp_basename, cov
+    :return: Extract the datasets we created in the checkpoint split_gte.
+    """
+    logger.debug("rule run_qtl, merge_exps - get_datasets({})".format(print_wildcards(wildcards)))
+    out_dir = checkpoints.split_gte.get(**wildcards, gte_basename=BASENAMES["gte"]).output[0]
+    datasets = glob_wildcards(os.path.join(out_dir, "gte_{dataset}.txt"))
+    logger.debug("\tfound datasets: '" + ", ".join(datasets.dataset) + "'")
+
+    return datasets.dataset
+
+
+def get_genes(wildcards):
+    """
+    :rule: create_batches and merge_top_effects
+    :param wildcards: genes_file, annot_basename, ngenes, cov, output_prefix / cov, output_prefix
+    :return: the set of genes over which to create the batches. If snpgenelimit is given, return the gene column, else if
+    genelimit is given return that, else return the QTL expression matrix.
+    """
+    logger.debug("rule create_batches - get_genes({})".format(print_wildcards(wildcards)))
+
+    # Creating gene batches based on snpgenelimit has prio over genelimit.
+    if config["inputs"]["snpgenelimit"] != "":
+        fpath = "limit/{sgl_basename}_genes.txt".format(**wildcards, sgl_basename=BASENAMES["snpgenelimit"])
+        logger.debug("\treturn output of rule 'split_snpgenelimit': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+    elif config["inputs"]["genelimit"] != "":
+        fpath = config["inputs"]["genelimit"]
+        logger.debug("\treturn input 'genelimit': " + fpath)
+        return fpath
+
+    logger.debug("\tcalling 'get_exp' function")
+    fpath = get_exp(wildcards)
+    logger.debug("\treturning: " + fpath)
+    return fpath
+
+
+def get_annotation(wildcards):
+    """
+    :rule: run_qtl and create_batches
+    :param wildcards: cov, batch / genes_file, annot_basename, cov, output_prefix
+    :return: return the gene annotation file. If the input is a gtf we need to convert this first using
+    create_gene_annotation, else we return the input annotation file.
+    """
+    fpath = "create_annotation/{annot_basename}.txt.gz".format(annot_basename=BASENAMES["annotation"])
+    logger.debug("\treturning output of rule 'create_gene_annotation': " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_vcf(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: return the filtered vcf if filter_vcf is True. To differentiate between snpgenelimit and snplimit based filtered VCF
+    the basename of the file is added to the filtered VCF file. Else return the original VCF.
+    """
+    logger.debug("rule run_qtl - get_vcf({})".format(print_wildcards(wildcards)))
+    if config["general_settings"]["filter_vcf"] and config["inputs"]["snpgenelimit"] != "":
+        fpath = "genotype/{vcf_basename}_{sgl_basename}.vcf.bgz".format(**wildcards, vcf_basename=BASENAMES["vcf"], sgl_basename=BASENAMES["snpgenelimit"])
+        logger.debug("\treturning output of rule 'filter_vcf' with snpgenelimit: " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+    elif config["general_settings"]["filter_vcf"] and config["inputs"]["snplimit"] != "":
+        fpath = "genotype/{vcf_basename}_{snp_basename}.vcf.bgz".format(**wildcards, vcf_basename=BASENAMES["vcf"], snp_basename=BASENAMES["snplimit"])
+        logger.debug("\treturning output of rule 'filter_vcf' with snplimit: " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+    elif config["general_settings"]["filter_vcf"]:
+        fpath = "genotype/{vcf_basename}_OnlyQCFilter.vcf.bgz".format(**wildcards, vcf_basename=BASENAMES["vcf"])
+        logger.debug("\treturning output of rule 'filter_vcf': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    fpath = config["inputs"]["vcf"]
+    logger.debug("\treturning input 'vcf': " + fpath)
+    return fpath
+
+
+def get_vcf_index(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: return the input vcf and add a 'tbi' suffix.
+    """
+    logger.debug("rule run_qtl - get_vcf_index({})".format(print_wildcards(wildcards)))
+    logger.debug("\tcalling 'get_vcf' function")
+    fpath = get_vcf(wildcards) + ".tbi"
+    logger.debug("\treturning: " + fpath)
+    return fpath
+
+
+def get_exp(wildcards):
+    """
+    :rule: create_batches, merge_top_effects, and run_qtl
+    :param wildcards: genes_file, annot_basename, ngenes, cov, output_prefix / cov, output_prefix / cov, batch
+    :return: depending on the covariates the input is selected. If no covariates are removed (i.e. default or 0Pcs) the original
+    input file can be returned. If covariates should be removed, we need to determine if this is done per dataset
+    (output rule merge_exps) or not (output rule regressor).
+    """
+    logger.debug("rule run_qtl - get_exp({})".format(print_wildcards(wildcards)))
+    if wildcards.cov == "default" or wildcards.cov == "0Pcs":
+        fpath = config["inputs"]["exp"]
+        logger.debug("\treturning input 'exp': " + fpath)
+        return fpath
+    elif wildcards.cov == "cov" or "cov" in config["general_settings"]["force_mega"] or config["inputs"]["gte"].endswith(".smf") or len(get_datasets(wildcards)) == 1:
+        # wildcards == cov means there are no PCs so no per dataset correction needed
+        # force_mega == cov means we want to force to regress everything together so no per dataset correction needed
+        # gte endswith '.smf' means there are no datasets so no per dataset correction needed
+        # n datasets == 1 means there are no other datasets so no per dataset correction needed
+        fpath = "regressor/all/{exp_basename}.{cov}.CovariatesRemovedOLS.txt.gz".format(**wildcards, exp_basename=BASENAMES["exp"])
+        logger.debug("\treturning output of rule 'regressor': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    fpath = "regressor/merged.{exp_basename}.{cov}.CovariatesRemovedOLS.txt.gz".format(**wildcards, exp_basename=BASENAMES["exp"])
+    logger.debug("\treturning output of rule 'merge_exps': " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_qtl_gte(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: if force_mega should be applied over the QTL analysis we return a gte file where the dataset
+    column is equal to 'Dataset' for all samples, else we return the original gte.
+    """
+    logger.debug("rule run_qtl - get_qtl_gte({})".format(print_wildcards(wildcards)))
+    if "qtl" in config["general_settings"]["force_mega"]:
+        fpath = "gte/{gte_basename}/gte_noDataset.txt".format(**wildcards, gte_basename=BASENAMES["gte"])
+        logger.debug("\treturn output of rule 'remove_gte_dataset': " + fpath)
+        return config["outputs"]["output_dir"] + fpath
+
+    logger.debug("\tcalling 'get_gte' function")
+    fpath = get_gte(wildcards)
+    logger.debug("\treturning: " + fpath)
+    return fpath
+
+
+def get_snpannotation(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: '--snpannotation <snpannotation>' if use_snpannotation is True, else return an empty string.
+    """
+    logger.debug("rule run_qtl - get_snpannotation({})".format(print_wildcards(wildcards)))
+    prefix = "--snpannotation "
+
+    if config["general_settings"]["use_snpannotation"]:
+        logger.debug("\tcalling 'get_vcf' function")
+        fpath = "create_annotation/{vcf_basename}_snpannotation.txt.gz".format(**wildcards, vcf_basename=get_basename(get_vcf(wildcards)))
+        logger.debug("\treturning output of rule 'create_snp_annotation': " + fpath)
+        return prefix + config["outputs"]["output_dir"] + fpath
+
+    logger.debug("\treturning: ''")
+    return ""
+
+
+def get_expgroups(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: '--expgroups <expgroups>' if it is given, else return an empty string.
+    """
+    logger.debug("rule run_qtl - get_expgroups({})".format(print_wildcards(wildcards)))
+    if config["inputs"]["expgroups"] != "":
+        fpath = config["inputs"]["expgroups"]
+        logger.debug("\treturning input 'expgroups': " + fpath)
+        return "--expgroups " + fpath
+
+    logger.debug("\treturning: ''")
+    return ""
+
+
+def get_genelimit(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: '--genelimit <batch/genelimit>', if n_genes is higher than 1 fill in the set of genes of the
+    current batch from 'create_batches', else fill in the '--genelimit <genelimit>' if it is given, else
+    return an empty string.
+    """
+    logger.debug("rule run_qtl - get_genelimit({})".format(print_wildcards(wildcards)))
+    prefix = "--genelimit "
+
+    if config["general_settings"]["n_genes"] is not None and config["general_settings"]["n_genes"] > 1:
+        # The create_batches rule takes into account the genes from genelimit
+        # if they are given.
+        logger.debug("\tcalling 'get_genes' function")
+        fpath = "batches/{genes_file}_{annot_basename}_{expgroups_basename}_{ngenes}/{cov}/{output_prefix}/{batch}-genes.txt".format(**wildcards, genes_file=get_basename(get_genes(wildcards)), annot_basename=BASENAMES["annotation"], expgroups_basename=BASENAMES["expgroups"], ngenes=config["general_settings"]["n_genes"], output_prefix=config["outputs"]["output_prefix"])
+        logger.debug("\treturning output of checkpoint 'create_batches': " + fpath)
+        return prefix + config["outputs"]["output_dir"] + fpath
+    elif config["inputs"]["genelimit"] != "":
+        # Only if n_genes is None: i.e. all genes are tested in 1 job
+        fpath = config["inputs"]["genelimit"]
+        logger.debug("\treturning input 'genelimit': " + fpath)
+        return prefix + fpath
+
+    logger.debug("\treturning: ''")
+    return ""
+
+
+def get_snplimit(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: '--snplimit <snplimit>' if it is given, else return an empty string.
+    """
+    logger.debug("rule run_qtl - get_snplimit({})".format(print_wildcards(wildcards)))
+    prefix = "--snplimit "
+    if config["inputs"]["snplimit"] != "":
+        fpath = config["inputs"]["snplimit"]
+        logger.debug("\treturning input 'snplimit': " + fpath)
+        return prefix + fpath
+
+    logger.debug("\treturning: ''")
+    return ""
+
+
+def get_snpgenelimit(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return: '--snpgenelimit <snpgenelimit>' if it is given, else return an empty string.
+    """
+    logger.debug("rule run_qtl - get_snpgenelimit({})".format(print_wildcards(wildcards)))
+    prefix = "--snpgenelimit "
+    if config["inputs"]["snpgenelimit"] != "":
+        fpath = config["inputs"]["snpgenelimit"]
+        logger.debug("\treturning input 'snpgenelimit': " + fpath)
+        return prefix + fpath
+
+    logger.debug("\treturning: ''")
+    return ""
+
+
+def get_qtl_optional_files(wildcards):
+    """
+    :rule: run_qtl
+    :param wildcards: cov, batch
+    :return:
+    """
+    logger.debug("rule run_qtl - get_qtl_optional_files({})".format(print_wildcards(wildcards)))
+    optional_files = []
+
+    logger.debug("\tcalling 'get_snpannotation' function")
+    snpannotation = get_snpannotation(wildcards)
+    if snpannotation != "":
+        fpath = snpannotation.replace("--snpannotation ", "")
+        logger.debug("\tRequesting snpannotation file: "  + fpath)
+        optional_files.append(fpath)
+
+    logger.debug("\tcalling 'get_expgroups' function")
+    expgroups = get_expgroups(wildcards)
+    if expgroups != "":
+        fpath = expgroups.replace("--expgroups ", "")
+        logger.debug("\tRequesting expgroups file: "  + fpath)
+        optional_files.append(fpath)
+
+    logger.debug("\tcalling 'get_genelimit' function")
+    genelimit = get_genelimit(wildcards)
+    if genelimit != "":
+        fpath = genelimit.replace("--genelimit ", "")
+        logger.debug("\tRequesting genelimit file: "  + fpath)
+        optional_files.append(fpath)
+
+    logger.debug("\tcalling 'get_snplimit' function")
+    snplimit = get_snplimit(wildcards)
+    if snplimit != "":
+        fpath = snplimit.replace("--snplimit ", "")
+        logger.debug("\tRequesting snplimit file: "  + fpath)
+        optional_files.append(fpath)
+
+    logger.debug("\tcalling 'get_snpgenelimit' function")
+    snpgenelimit = get_snpgenelimit(wildcards)
+    if snpgenelimit != "":
+        fpath = snpgenelimit.replace("--snpgenelimit ", "")
+        logger.debug("\tRequesting snpgenelimit file: "  + fpath)
+        optional_files.append(fpath)
+
+    return optional_files
+
+
+def get_export_all_effects_optional_files(wildcards):
+    """
+    :rule: export_all_effects
+    :param wildcards: cov, output_prefix, chr
+    :return:
+    """
+    logger.debug("rule export_all_effects - get_export_all_effects_optional_files({})".format(print_wildcards(wildcards)))
+    optional_files = []
+
+    logger.debug("\tcalling 'get_snpannotation' function")
+    snpannotation = get_snpannotation(wildcards)
+    if snpannotation != "":
+        fpath = snpannotation.replace("--snpannotation ", "")
+        logger.debug("\tRequesting snpannotation file: "  + fpath)
+        optional_files.append(fpath)
+
+    logger.debug("\tcalling 'get_snplimit' function")
+    snplimit = get_snplimit(wildcards)
+    if snplimit != "":
+        fpath = snplimit.replace("--snplimit ", "")
+        logger.debug("\tRequesting snplimit file: "  + fpath)
+        optional_files.append(fpath)
+
+    logger.debug("\tcalling 'get_snpgenelimit' function")
+    snpgenelimit = get_snpgenelimit(wildcards)
+    if snpgenelimit != "":
+        fpath = snpgenelimit.replace("--snpgenelimit ", "")
+        logger.debug("\tRequesting snpgenelimit file: "  + fpath)
+        optional_files.append(fpath)
+
+    return optional_files
+
+
+def get_batches(wildcards):
+    """
+    :rule: merge_top_effects
+    :param wildcards: cov, output_prefix
+    :return: Extract the batches we created in the checkpoint create_batches.
+    """
+    logger.debug("rule merge_top_effects - get_batches({})".format(print_wildcards(wildcards)))
+    logger.debug("\tcalling 'get_genes' function")
+    out_dir = checkpoints.create_batches.get(**wildcards, genes_file=get_basename(get_genes(wildcards)), annot_basename=BASENAMES["annotation"], expgroups_basename=BASENAMES["expgroups"], ngenes=config["general_settings"]["n_genes"]).output[0]
+    batches = glob_wildcards(os.path.join(out_dir, "{batch}-genes.txt"))
+    logger.debug("\tfound batches: '" + ", ".join(batches.batch) + "'")
+
+    if len(batches.batch) == 0:
+        logger.error("Critical, no batches found.")
+        exit()
+
+    return batches.batch
+
+
+def get_top_hits_fpath(wildcards):
+    """
+    :rule: multiple_test_correction
+    :param wildcards: cov, output_prefix
+    :return: If the program is executed with a single batch we can return the output of rule run_qtl directly,
+    otherwise we first need to combine all top effects by requesting the output of rule merge_top_effects.
+    """
+    logger.debug("rule multiple_test_correction - get_top_hits_fpath({})".format(print_wildcards(wildcards)))
+    if config["general_settings"]["n_genes"] is None or config["general_settings"]["n_genes"] == 1:
+        fpath = "output/{cov}/{output_prefix}-TopEffects".format(**wildcards)
+        logger.debug("\treturning output of rule 'run_qtl': " + fpath)
+        return fpath
+
+    fpath = "output/{cov}/{output_prefix}-merged".format(**wildcards)
+    logger.debug("\treturning output of rule 'merge_top_effects': " + fpath)
+    return fpath
+
+
+def get_top_hits(wildcards):
+    """
+    :rule: multiple_test_correction
+    :param wildcards: cov, output_prefix
+    :return: If the program is executed with a single batch we can return the output of rule run_qtl directly,
+    otherwise we first need to combine all top effects by requesting the output of rule merge_top_effects.
+    """
+    logger.debug("rule multiple_test_correction - get_top_hits({})".format(print_wildcards(wildcards)))
+    logger.debug("\tcalling 'get_top_hits_fpath' function")
+    fpath = get_top_hits_fpath(wildcards) + ".txt"
+    logger.debug("\treturning: " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+def get_top_hits_finished(wildcards):
+    """
+    :rule: multiple_test_correction
+    :param wildcards: cov, output_prefix
+    :return: If the program is executed with a single batch we need to check if the finished file exits, else
+    there is no need sing the 'merge_top_effects' rule checks this.
+    """
+    logger.debug("rule multiple_test_correction - get_top_hits({})".format(print_wildcards(wildcards)))
+    logger.debug("\tcalling 'get_top_hits_fpath' function")
+    fpath = get_top_hits_fpath(wildcards) + ".finished"
+    logger.debug("\treturning: " + fpath)
+    return config["outputs"]["output_dir"] + fpath
+
+
+rule all:
+    input: get_input
+
+
+rule preflight_checks:
+    input:
+        gte = config["inputs"]["gte"],
+        vcf = config["inputs"]["vcf"],
+        exp = config["inputs"]["exp"],
+        cov = config["inputs"]["cov"],
+    output:
+        finished = temp(config["outputs"]["output_dir"] + "preflights.finished")
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["preflight_checks_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["preflight_checks_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["preflight_checks_time"]]
+    threads: config["preflight_checks_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/check_sample_overlap.py",
+        cov = "--cov " + config["inputs"]["cov"] if "cov" != "" else config["inputs"]["cov"],
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --gte {input.gte} \
+            --vcf {input.vcf} \
+            --exp {input.exp} \
+            {params.cov}
+        singularity exec --bind {params.bind} {params.sif} touch {output.finished}
+        """
+
+
+rule create_gene_annotation:
+    input:
+        data = config["inputs"]["annotation"]
+    output:
+        dupl_annotation = temp(config["outputs"]["output_dir"] + "create_annotation/{annot_basename}.WithDuplicates.txt.gz"),
+        annotation = config["outputs"]["output_dir"] + "create_annotation/{annot_basename}.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["create_gene_annotation_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["create_gene_annotation_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["create_gene_annotation_time"]]
+    threads: config["create_gene_annotation_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/create_annotation_file.py",
+        feature_name = config["create_annotation_settings"]["feature_name"],
+        autosomes_only = "--autosomes_only " if config["create_annotation_settings"]["autosomes_only"] else "",
+        out = config["outputs"]["output_dir"] + "create_annotation/{annot_basename}"
+    log: config["outputs"]["output_dir"] + "log/create_gene_annotation.{annot_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --feature_name {params.feature_name} \
+            {params.autosomes_only} \
+            --out {params.out} > {log} 2>&1
+        """
+
+
+rule create_snp_annotation:
+    input:
+        vcf = get_vcf
+    output:
+        annotation = config["outputs"]["output_dir"] + "create_annotation/{vcf_basename}_snpannotation.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["create_snp_annotation_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["create_snp_annotation_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["create_snp_annotation_time"]]
+    threads: config["create_snp_annotation_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+    log: config["outputs"]["output_dir"] + "log/create_snp_annotation.{vcf_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} zcat {input.vcf} | grep "^[^#;]" | awk -v OFS='\t' '{{print $3, $1, $2}}' | gzip -c > {output.annotation}
+        """
+
+
+rule smf_to_gte:
+    input:
+        smf = config["inputs"]["gte"],
+    output:
+        gte = config["outputs"]["output_dir"] + "gte/{gte_basename}/gte.txt"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["smf_to_gte_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["smf_to_gte_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["smf_to_gte_time"]]
+    threads: config["smf_to_gte_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+    log: config["outputs"]["output_dir"] + "log/smf_to_gte.{gte_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} awk 'BEGIN{{ FS = OFS = "\\t" }} {{ print $1, $2, "Dataset" }}' {input.smf} > {output.gte}
+        """
+
+
+checkpoint split_gte:
+    priority: 50
+    input:
+        gte = get_gte,
+    output:
+        datasets = directory(config["outputs"]["output_dir"] + "gte/{gte_basename}/split/")
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["split_gte_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["split_gte_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["split_gte_time"]]
+    threads: config["split_gte_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/split_gte.py"
+    log: config["outputs"]["output_dir"] + "log/split_gte.{gte_basename}.log"
+    shell:
+        """
+        mkdir -p {output.datasets}
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --gte {input.gte} \
+            --out {output.datasets} > {log} 2>&1
+        """
+
+
+rule split_snpgenelimit:
+    input:
+        sgl = config["inputs"]["snpgenelimit"]
+    output:
+        vars = config["outputs"]["output_dir"] + "limit/{sgl_basename}_variants.txt",
+        genes = config["outputs"]["output_dir"] + "limit/{sgl_basename}_genes.txt"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["split_snpgenelimit_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["split_snpgenelimit_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["split_snpgenelimit_time"]]
+    threads: config["split_snpgenelimit_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        cat = "zcat" if config["inputs"]["snpgenelimit"].endswith(".gz") else "cat",
+    log: config["outputs"]["output_dir"] + "log/split_snpgenelimit.{sgl_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} {params.cat} {input.sgl} | awk 'BEGIN{{ FS = OFS = "\\t" }} {{ print $1 }}' > {output.vars} 
+        singularity exec --bind {params.bind} {params.sif} {params.cat} {input.sgl} | awk 'BEGIN{{ FS = OFS = "\\t" }} {{ print $2 }}' > {output.genes}
+        """
+
+
+rule index_vcf:
+    input:
+        vcf = config["inputs"]["vcf"]
+    output:
+        index = config["inputs"]["vcf"] + ".tbi"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["index_vcf_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["index_vcf_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["index_vcf_time"]]
+    threads: config["index_vcf_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+    log: config["outputs"]["output_dir"] + "log/index_vcf.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} tabix -p vcf {input.vcf}
+        """
+
+
+rule genotype_io:
+    input:
+        vcf = config["inputs"]["vcf"],
+        index = config["inputs"]["vcf"] + ".tbi"
+    output:
+        vars = temp(config["outputs"]["output_dir"] + "genotype/{vcf_basename}_stats.vars.gz"),
+        samples = temp(config["outputs"]["output_dir"] + "genotype/{vcf_basename}_stats.samples.gz")
+    resources:
+        java_mem_gb = lambda wildcards, attempt: attempt * config["genotype_io_memory"] * config["genotype_io_threads"] - config["settings_extra"]["java_memory_buffer"],
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["genotype_io_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["genotype_io_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["genotype_io_time"]]
+    threads: config["genotype_io_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        jar = "/opt/Genotype-IO-1.0.6-SNAPSHOT/GenotypeIO.jar",
+        out = config["outputs"]["output_dir"] + "genotype/{vcf_basename}_stats"
+    log: config["outputs"]["output_dir"] + "log/genotype_io.{vcf_basename}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} java -Xmx{resources.java_mem_gb}g -Xms{resources.java_mem_gb}g \
+            -Djava.util.concurrent.ForkJoinPool.common.parallelism={threads} \
+            -Dmaximum.threads={threads} -Dthread.pool.size={threads} \
+            -jar {params.jar} \
+            --inputType VCF \
+            --input {input.vcf} \
+            --output {params.out} > {log} 2>&1
+         singularity exec --bind {params.bind} {params.sif} gzip {params.out}.vars
+         singularity exec --bind {params.bind} {params.sif} gzip {params.out}.samples
+        """
+
+
+rule filter_vcf:
+    input:
+        vcf = config["inputs"]["vcf"],
+        gte = get_gte,
+        vars = get_variants,
+        var_stats = config["outputs"]["output_dir"] + "genotype/{vcf_basename}_stats.vars.gz"
+    output:
+        samples = temp(config["outputs"]["output_dir"] + "genotype/{vcf_basename}_{limit_file}_samples.txt"),
+        vcf_gz = temp(config["outputs"]["output_dir"] + "genotype/{vcf_basename}_{limit_file}.vcf.gz"),
+        vcf_bgz = config["outputs"]["output_dir"] + "genotype/{vcf_basename}_{limit_file}.vcf.bgz",
+        index = config["outputs"]["output_dir"] + "genotype/{vcf_basename}_{limit_file}.vcf.bgz.tbi"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_vcf_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_vcf_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["filter_vcf_time"]]
+    threads: config["filter_vcf_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/filter_vcf.py",
+        maf = "--maf " + str(config["general_settings"]["filter_vcf_maf"]) if config["general_settings"]["filter_vcf_maf"] is not None else "",
+        cr = "--cr " + str(config["general_settings"]["filter_vcf_cr"]) if config["general_settings"]["filter_vcf_cr"] is not None else "",
+        hwep = "--hwep " + str(config["general_settings"]["filter_vcf_hwep"]) if config["general_settings"]["filter_vcf_hwep"] is not None else "",
+        r2 = "--r2 " + str(config["general_settings"]["filter_vcf_r2"]) if config["general_settings"]["filter_vcf_r2"] is not None else "",
+    log: config["outputs"]["output_dir"] + "log/filter_vcf.{vcf_basename}.{limit_file}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} awk 'BEGIN{{ FS = OFS = "\\t" }} {{ print $1 }}' {input.gte} > {output.samples}
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --vcf {input.vcf} \
+            --variant_stats {input.var_stats} \
+            {params.maf} \
+            {params.cr} \
+            {params.hwep} \
+            {params.r2} \
+            --variants {input.vars} \
+            --samples {output.samples} \
+            --outfile {output.vcf_gz} > {log} 2>&1
+            
+        if [[ "$(singularity exec --bind {params.bind} {params.sif} zcat {output.vcf_gz} | grep -v "^#" | wc -l)" -eq "0" ]]; 
+        then
+           echo "Error, total number of SNPs in the output VCF is 0"
+           rm {output.vcf_gz}
+        fi
+            
+        singularity exec --bind {params.bind} {params.sif} gunzip -c {output.vcf_gz} | \
+            singularity exec --bind {params.bind} {params.sif} bgzip > {output.vcf_bgz}
+        singularity exec --bind {params.bind} {params.sif} tabix -p vcf {output.vcf_bgz}
+        """
+
+
+rule gte_to_dataset_cov:
+    input:
+        gte = get_gte
+    output:
+        cov = config["outputs"]["output_dir"] + "cov/{gte_basename}/cov.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["gte_to_dataset_cov_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["gte_to_dataset_cov_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["gte_to_dataset_cov_time"]]
+    threads: config["gte_to_dataset_cov_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/gte_to_dataset_cov.py",
+    log: config["outputs"]["output_dir"] + "log/gte_to_dataset_cov.{gte_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --gte {input.gte} \
+            --outfile {output.cov} > {log} 2>&1
+        """
+
+
+rule filter_exp:
+    input:
+        gte = get_dataset_gte,
+        data = config["inputs"]["exp"]
+    output:
+        samples = temp(config["outputs"]["output_dir"] + "exp/{dataset}/{exp_basename}_samples.txt"),
+        out = config["outputs"]["output_dir"] + "exp/{dataset}/{exp_basename}.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_matrix_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_matrix_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["filter_matrix_time"]]
+    threads: config["filter_matrix_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/filter_matrix.py",
+    log: config["outputs"]["output_dir"] + "log/filter_exp.{dataset}.{exp_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} awk 'BEGIN{{ FS = OFS = "\\t" }} {{ print $2 }}' {input.gte} > {output.samples}
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --columns {output.samples} \
+            --outfile {output.out} > {log} 2>&1
+        """
+
+
+rule pca:
+    input:
+        data = get_pca_expr,
+        gte = get_dataset_gte
+    output:
+        pca = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.Pcs.txt.gz",
+        rot = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.Pcs_rot.txt.gz",
+        var = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.Pcs_var.txt.gz",
+        include_gte = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.samples_include.txt",
+        exclude_gte = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.samples_exclude.txt",
+        pca_plot = report(config["outputs"]["output_dir"] + "figures/{dataset}/{infile}.Pcs.png", category="PCA", subcategory="{dataset} - {infile}", caption=config["inputs"]["repo_dir"] + "report_captions/pca_scatter.rst"),
+        scree_plot = report(config["outputs"]["output_dir"] + "figures/{dataset}/{infile}.Scree.png", category="PCA", subcategory="{dataset} - {infile}", caption=config["inputs"]["repo_dir"] + "report_captions/pca_scree.rst"),
+        done = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.done",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["pca_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["pca_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["pca_time"]]
+    threads: config["pca_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/pca.py",
+        eval_n_pcs = config["pca_settings"]["eval_n_pcs"],
+        zscore = config["pca_settings"]["sample_outlier_zscore"],
+        data_out = config["outputs"]["output_dir"] + "pca/{dataset}/{infile}.",
+        plot_out = config["outputs"]["output_dir"] + "figures/{dataset}/{infile}."
+    log: config["outputs"]["output_dir"] + "log/pca.{dataset}.{infile}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --transpose \
+            --gte {input.gte} \
+            --center \
+            --scale \
+            --eval_n_pcs {params.eval_n_pcs} \
+            --zscore {params.zscore} \
+            --data_out {params.data_out} \
+            --plot_out {params.plot_out} > {log} 2>&1
+        singularity exec --bind {params.bind} {params.sif} touch {output.done}
+        """
+
+
+rule filter_pcs:
+    input:
+        data = config["outputs"]["output_dir"] + "pca/{dataset}/{exp_basename}.Pcs.txt.gz"
+    output:
+        out = config["outputs"]["output_dir"] + "pca/{dataset}/{exp_basename}.{n_pcs}Pcs.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_matrix_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_matrix_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["filter_matrix_time"]]
+    threads: config["filter_matrix_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/filter_matrix.py",
+    log: config["outputs"]["output_dir"] + "log/filter_pca.{dataset}.{exp_basename}.{n_pcs}Pcs.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --head {wildcards.n_pcs} \
+            --outfile {output.out} > {log} 2>&1
+        """
+
+
+rule merge_covs:
+    input:
+        cov = get_cov,
+        pca = config["outputs"]["output_dir"] + "pca/{dataset}/{exp_basename}.{n_pcs}Pcs.txt.gz"
+    output:
+        cov = config["outputs"]["output_dir"] + "cov/{dataset}/{exp_basename}.cov{n_pcs}Pcs.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_matrices_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_matrices_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["merge_matrices_time"]]
+    threads: config["merge_matrices_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_matrices.py"
+    log: config["outputs"]["output_dir"] + "log/merge_covs.{dataset}.{exp_basename}.{n_pcs}Pcs.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.cov} {input.pca} \
+            --axis 0 \
+            --outfile {output.cov} > {log} 2>&1
+        """
+
+
+rule regressor:
+    input:
+        data = get_regressor_exp,
+        cov = get_regressor_cov
+    output:
+        data = config["outputs"]["output_dir"] + "regressor/{dataset}/{exp_basename}.{cov}.CovariatesRemovedOLS.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["regressor_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["regressor_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["regressor_time"]]
+    threads: config["regressor_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/regressor.py"
+    log: config["outputs"]["output_dir"] + "log/regressor.{dataset}.{exp_basename}.{cov}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --cov {input.cov} \
+            --outfile {output.data} > {log} 2>&1
+        """
+
+
+rule merge_exps:
+    input:
+        exps = lambda wildcards: expand(config["outputs"]["output_dir"] + "regressor/{dataset}/{exp_basename}.{cov}.CovariatesRemovedOLS.txt.gz", dataset=get_datasets(wildcards), allow_missing=True)
+    output:
+        out = config["outputs"]["output_dir"] + "regressor/merged.{exp_basename}.{cov}.CovariatesRemovedOLS.txt.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_matrices_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_matrices_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["merge_matrices_time"]]
+    threads: config["merge_matrices_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_matrices.py",
+    log: config["outputs"]["output_dir"] + "log/merge_exps.{exp_basename}.{cov}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.exps} \
+            --axis 1 \
+            --out {output.out} > {log} 2>&1
+        """
+
+
+rule remove_gte_dataset:
+    input:
+        gte = get_gte
+    output:
+        gte = config["outputs"]["output_dir"] + "gte/{gte_basename}/gte_noDataset.txt"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["remove_gte_dataset_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["remove_gte_dataset_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["remove_gte_dataset_time"]]
+    threads: config["remove_gte_dataset_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+    log: config["outputs"]["output_dir"] + "log/remove_gte_dataset.{gte_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} awk 'BEGIN{{ FS = OFS = "\\t" }} {{ print $1, $2, "Dataset" }}' {input.gte} > {output.gte}
+        """
+
+
+checkpoint create_batches:
+    priority: 50
+    input:
+        genes = get_genes,
+        annotation = get_annotation
+    output:
+        batches = directory(config["outputs"]["output_dir"] + "batches/{genes_file}_{annot_basename}_{expgroups_basename}_{ngenes}/{cov}/{output_prefix}/")
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["create_batches_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["create_batches_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["create_batches_time"]]
+    threads: config["create_batches_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/create_batches.py",
+        expgroups = "--expgroups " + config["inputs"]["expgroups"] if config["inputs"]["expgroups"] != "" else "",
+        n_genes = config["general_settings"]["n_genes"],
+        out = config["outputs"]["output_dir"] + "batches/{genes_file}_{annot_basename}_{expgroups_basename}_{ngenes}/{cov}/{output_prefix}/" + config["outputs"]["output_prefix"]
+    log: config["outputs"]["output_dir"] + "log/create_batches.{genes_file}.{annot_basename}.{expgroups_basename}.{ngenes}.{cov}.{output_prefix}.log"
+    shell:
+        """
+        mkdir -p {output.batches}
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --genes {input.genes} \
+            --annotation {input.annotation} \
+            {params.expgroups} \
+            --n_genes {params.n_genes} \
+            --out {params.out} > {log} 2>&1
+        """
+
+
+# TODO: bug in mbQTL: nrdatasets is 1 but still gives warning 'Warning: min number of datasets 2 smaller than actual number of datasets 1'
+rule run_qtl:
+    input:
+        annotation = get_annotation,
+        vcf = get_vcf,
+        index = get_vcf_index,
+        exp = get_exp,
+        gte = get_qtl_gte,
+        optional_files = get_qtl_optional_files
+    output:
+        log = config["outputs"]["output_dir"] + "output/{cov}/{batch}-log.txt.gz",
+        top = config["outputs"]["output_dir"] + "output/{cov}/{batch}-TopEffects.txt",
+        all = config["outputs"]["output_dir"] + "output/{cov}/{batch}-AllEffects.txt.gz" if config["qtl_settings"]["outputall"] else temp(config["outputs"]["output_dir"] + "output/{cov}/{batch}-AllEffects.txt.gz"),
+        all_perm = config["outputs"]["output_dir"] + "output/{cov}/{batch}-Permutations.txt.gz" if config["qtl_settings"]["outputallpermutations"] else temp(config["outputs"]["output_dir"] + "output/{cov}/{batch}-Permutations.txt.gz"),
+        snplog = config["outputs"]["output_dir"] + "output/{cov}/{batch}-snpqclog.txt.gz" if config["qtl_settings"]["snplog"] else temp(config["outputs"]["output_dir"] + "output/{cov}/{batch}-snpqclog.txt.gz"),
+        finished = config["outputs"]["output_dir"] + "output/{cov}/{batch}-TopEffects.finished"
+    resources:
+        java_mem_gb = lambda wildcards, attempt: attempt * config["run_qtl_memory"] * config["run_qtl_threads"] - config["settings_extra"]["java_memory_buffer"],
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["run_qtl_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["run_qtl_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["run_qtl_time"]]
+    threads: config["run_qtl_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        jar = "/opt/tools/MbQTL.jar" if config["qtl_settings_extra"]["mbqtl_jar"] is None else config["qtl_settings_extra"]["mbqtl_jar"],
+        analysis_type = config["qtl_settings"]["analysis_type"],
+        meta_analysis_method = config["qtl_settings"]["meta_analysis_method"],
+        seed = config["qtl_settings"]["seed"],
+        snpannotation = get_snpannotation,
+        expgroups = get_expgroups,
+        genelimit = get_genelimit,
+        snplimit = get_snplimit,
+        snpgenelimit = get_snpgenelimit,
+        perm = config["qtl_settings"]["perm"],
+        ciswindow = config["qtl_settings"]["ciswindow"],
+        maf = config["qtl_settings"]["maf"],
+        cr = config["qtl_settings"]["cr"],
+        hwep = config["qtl_settings"]["hwep"],
+        minobservations = config["qtl_settings"]["minobservations"],
+        nrdatasets = config["qtl_settings"]["nrdatasets"],
+        mingenotypecount = config["qtl_settings"]["mingenotypecount"],
+        splitmultiallelic = "--splitmultiallelic" if config["qtl_settings"]["splitmultiallelic"] else "",
+        onlytestsnps = "--onlytestsnps" if config["qtl_settings"]["onlytestsnps"] else "",
+        testnonparseablechr = "--testnonparseablechr" if config["qtl_settings"]["testnonparseablechr"] else "",
+        replacemissinggenotypes = "--replacemissinggenotypes" if config["qtl_settings"]["replacemissinggenotypes"] else "",
+        usehardgenotypecalls = "--usehardgenotypecalls" if config["qtl_settings"]["usehardgenotypecalls"] else "",
+        norank = "--norank" if config["qtl_settings"]["norank"] else "",
+        outputall = "--outputall" if config["qtl_settings"]["outputall"] else "",
+        outputallpermutations = "--outputallpermutations" if config["qtl_settings"]["outputallpermutations"]  else "",
+        snplog = "--snplog" if config["qtl_settings"]["snplog"] else "",
+        out = config["outputs"]["output_dir"] + "output/{cov}/{batch}"
+    log: config["outputs"]["output_dir"] + "log/run_qtl.{cov}.{batch}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} java -Xmx{resources.java_mem_gb}g -Xms{resources.java_mem_gb}g \
+            -Djava.util.concurrent.ForkJoinPool.common.parallelism={threads} \
+            -Dmaximum.threads={threads} -Dthread.pool.size={threads} \
+            -jar {params.jar} \
+            --mode mbqtl \
+            --{params.analysis_type} \
+            --{params.meta_analysis_method} \
+            --seed {params.seed} \
+            --vcf {input.vcf} \
+            --exp {input.exp} \
+            --gte {input.gte} \
+            --annotation {input.annotation} \
+            {params.snpannotation} \
+            {params.expgroups} \
+            {params.genelimit} \
+            {params.snplimit} \
+            {params.snpgenelimit} \
+            --perm {params.perm} \
+            --ciswindow {params.ciswindow} \
+            --maf {params.maf} \
+            --cr {params.cr} \
+            --hwep {params.hwep} \
+            --minobservations {params.minobservations} \
+            --nrdatasets {params.nrdatasets} \
+            --mingenotypecount {params.mingenotypecount} \
+            {params.splitmultiallelic} \
+            {params.onlytestsnps} \
+            {params.testnonparseablechr} \
+            {params.replacemissinggenotypes} \
+            {params.usehardgenotypecalls} \
+            {params.norank} \
+            {params.outputall} \
+            {params.outputallpermutations} \
+            {params.snplog} \
+            --out {params.out} > {log} 2>&1
+        
+        singularity exec --bind {params.bind} {params.sif} touch {output.all} {output.all_perm} {output.snplog}
+        """
+
+
+rule export_all_effects:
+    input:
+        annotation = get_annotation,
+        vcf = get_vcf,
+        index = get_vcf_index,
+        exp = get_exp,
+        gte = get_qtl_gte,
+        optional_files = get_export_all_effects_optional_files
+    output:
+        log = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-log.txt.gz",
+        top = temp(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-TopEffects.txt"),
+        all = temp(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-AllEffects.txt.gz"),
+        snplog = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-snpqclog.txt.gz",
+        finished = temp(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-TopEffects.finished"),
+        all_sorted_tmp = temp(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-AllEffects-sorted.txt.gz"),
+        all_sorted = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-AllEffects-sorted.bgz.txt.gz",
+        all_sorted_index = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}-AllEffects-sorted.bgz.txt.gz.tbi",
+        finished2 = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}.finished",
+    resources:
+        java_mem_gb = lambda wildcards, attempt: attempt * config["export_all_effects_memory"] * config["export_all_effects_threads"] - config["settings_extra"]["java_memory_buffer"],
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["export_all_effects_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["export_all_effects_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["export_all_effects_time"]]
+    threads: config["export_all_effects_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        jar = "/opt/tools/MbQTL.jar" if config["qtl_settings_extra"]["mbqtl_jar"] is None else config["qtl_settings_extra"]["mbqtl_jar"],
+        analysis_type = config["qtl_settings"]["analysis_type"],
+        meta_analysis_method = config["qtl_settings"]["meta_analysis_method"],
+        seed = config["qtl_settings"]["seed"],
+        snpannotation = get_snpannotation,
+        snplimit = get_snplimit,
+        snpgenelimit = get_snpgenelimit,
+        ciswindow = config["qtl_settings"]["ciswindow"],
+        maf = config["qtl_settings"]["maf"],
+        cr = config["qtl_settings"]["cr"],
+        hwep = config["qtl_settings"]["hwep"],
+        minobservations = config["qtl_settings"]["minobservations"],
+        nrdatasets = config["qtl_settings"]["nrdatasets"],
+        mingenotypecount = config["qtl_settings"]["mingenotypecount"],
+        splitmultiallelic = "--splitmultiallelic" if config["qtl_settings"]["splitmultiallelic"] else "",
+        onlytestsnps = "--onlytestsnps" if config["qtl_settings"]["onlytestsnps"] else "",
+        testnonparseablechr = "--testnonparseablechr" if config["qtl_settings"]["testnonparseablechr"] else "",
+        replacemissinggenotypes = "--replacemissinggenotypes" if config["qtl_settings"]["replacemissinggenotypes"] else "",
+        usehardgenotypecalls = "--usehardgenotypecalls" if config["qtl_settings"]["usehardgenotypecalls"] else "",
+        norank = "--norank" if config["qtl_settings"]["norank"] else "",
+        sortby = lambda wildcards: "--sortbyz" if wildcards.sortby == "sortbyz" else "", #TODO: update once implemented
+        tabix_sequence_column = lambda wildcards: SORTBY_SEQUENCE_COL[wildcards.sortby],
+        tabix_pos_column = lambda wildcards: SORTBY_POS_COL[wildcards.sortby],
+        out = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chr{chr}-{sortby}"
+    log: config["outputs"]["output_dir"] + "log/export_all_effects.{cov}.{output_prefix}.chr{chr}.{sortby}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} java -Xmx{resources.java_mem_gb}g -Xms{resources.java_mem_gb}g \
+            -Djava.util.concurrent.ForkJoinPool.common.parallelism={threads} \
+            -Dmaximum.threads={threads} -Dthread.pool.size={threads} \
+            -jar {params.jar} \
+            --mode mbqtl \
+            --{params.analysis_type} \
+            --{params.meta_analysis_method} \
+            --seed {params.seed} \
+            --vcf {input.vcf} \
+            --exp {input.exp} \
+            --gte {input.gte} \
+            --annotation {input.annotation} \
+            {params.snpannotation} \
+            --chr {wildcards.chr} \
+            {params.snplimit} \
+            {params.snpgenelimit} \
+            --perm 0 \
+            --ciswindow {params.ciswindow} \
+            --maf {params.maf} \
+            --cr {params.cr} \
+            --hwep {params.hwep} \
+            --minobservations {params.minobservations} \
+            --nrdatasets {params.nrdatasets} \
+            --mingenotypecount {params.mingenotypecount} \
+            {params.splitmultiallelic} \
+            {params.onlytestsnps} \
+            {params.testnonparseablechr} \
+            {params.replacemissinggenotypes} \
+            {params.usehardgenotypecalls} \
+            {params.norank} \
+            --outputall \
+            --snplog \
+            --out {params.out} > {log} 2>&1
+            
+        singularity exec --bind {params.bind} {params.sif} java -Xmx{resources.java_mem_gb}g -Xms{resources.java_mem_gb}g \
+            -Djava.util.concurrent.ForkJoinPool.common.parallelism={threads} \
+            -Dmaximum.threads={threads} -Dthread.pool.size={threads} \
+            -jar {params.jar} \
+            --mode sortfile \
+            --input {output.all} \
+            {params.sortby} \
+            --out {output.all_sorted_tmp} >> {log} 2>&1
+            
+        singularity exec --bind {params.bind} {params.sif} zcat {output.all_sorted_tmp} | \
+            singularity exec --bind {params.bind} {params.sif} bgzip -c > {output.all_sorted}
+            
+        if [[ "$(echo {wildcards.sortby})" == "sortbygenepos" || "$(echo {wildcards.sortby})" == "sortbysnppos" ]]; 
+        then
+            singularity exec --bind {params.bind} {params.sif} tabix \
+                --force \
+                --sequence $(zcat {output.all_sorted} | head -n 1 | tr '\\t' '\\n' | awk '/{params.tabix_sequence_column}$/ {{print NR}}') \
+                --begin $(zcat {output.all_sorted} | head -n 1 | tr '\\t' '\\n' | awk '/{params.tabix_pos_column}$/ {{print NR}}') \
+                --end $(zcat {output.all_sorted} | head -n 1 | tr '\\t' '\\n' | awk '/{params.tabix_pos_column}$/ {{print NR}}') \
+                --skip-lines 1 \
+                {output.all_sorted}
+        else
+            singularity exec --bind {params.bind} {params.sif} touch {output.all_sorted_index}
+        fi
+        
+        singularity exec --bind {params.bind} {params.sif} touch {output.finished2}
+        """
+
+
+rule merge_top_effects:
+    input:
+        top = lambda wildcards: expand(config["outputs"]["output_dir"] + "output/{cov}/{batch}-TopEffects.txt", batch=get_batches(wildcards), allow_missing=True),
+        finished = lambda wildcards: expand(config["outputs"]["output_dir"] + "output/{cov}/{batch}-TopEffects.finished", batch=get_batches(wildcards), allow_missing=True)
+    output:
+        top = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-merged.txt",
+        finished = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-merged.finished"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_top_effects_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_top_effects_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["merge_top_effects_time"]]
+    threads: config["merge_top_effects_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_top_effects.py",
+        input_dir = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-chunk"
+    log: config["outputs"]["output_dir"] + "log/merge_top_effects.{cov}.{output_prefix}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --input_dir {params.input_dir} \
+            --outfile {output.top} > {log} 2>&1
+        singularity exec --bind {params.bind} {params.sif} touch {output.finished}
+        """
+
+
+rule multiple_test_correction:
+    input:
+        top_hits = get_top_hits,
+        finished = get_top_hits_finished
+    output:
+        top_hits = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffectsWithMultTest.txt",
+        fig1 = report(config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects_hist.png", category="multiple_test_correction", subcategory="{cov}", caption=config["inputs"]["repo_dir"] + "report_captions/qvalue_hist.rst"),
+        fig2 = report(config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects_overview.png", category="multiple_test_correction", subcategory="{cov}", caption=config["inputs"]["repo_dir"] + "report_captions/qvalue_overview.rst")
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["multiple_test_correction_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["multiple_test_correction_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["multiple_test_correction_time"]]
+    threads: config["multiple_test_correction_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/multiple_testing_correction.R",
+        nom_pvalue = "MetaP",
+        n_tests = "NrTestedSNPs",
+        perm_settings = "--beta_adj_pvalue BetaAdjustedMetaP --beta_dist_a BetaDistAlpha --beta_dist_b BetaDistBeta" if config["qtl_settings"]["perm"] > 0 else "",
+        bonf_pvalue_col = "BonfAdjustedMetaP",
+        bonf_bh_fdr_col = "BonfBHAdjustedMetaP",
+        bh_fdr_col = "bh_fdr",
+        qvalue_col = "qval",
+        nom_thresh_col = "PvalueNominalThreshold",
+        alpha = config["general_settings"]["alpha"],
+        data_out = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffects",
+        plot_out = config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects",
+        suffix = "WithMultTest"
+    log: config["outputs"]["output_dir"] + "log/multiple_test_correction.{cov}.{output_prefix}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} Rscript {params.script} \
+            --input {input.top_hits} \
+            --nom_pvalue {params.nom_pvalue} \
+            --n_tests {params.n_tests} \
+            {params.perm_settings} \
+            --bonf_pvalue_col {params.bonf_pvalue_col} \
+            --bonf_bh_fdr_col {params.bonf_bh_fdr_col} \
+            --bh_fdr_col {params.bh_fdr_col} \
+            --qvalue_col {params.qvalue_col} \
+            --nom_thresh_col {params.nom_thresh_col} \
+            --alpha {params.alpha} \
+            --data_out {params.data_out} \
+            --plot_out {params.plot_out} \
+            --suffix {params.suffix} > {log} 2>&1
+        """
+
+
+rule filter_significant:
+    input:
+        data = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffectsWithMultTest.txt"
+    output:
+        outfile = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffectsWithMultTest-{signif_filter}significant.txt"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_significant_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["filter_significant_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["filter_significant_time"]]
+    threads: config["filter_significant_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/filter_significant.py",
+        signif_col = config["general_settings"]["signif_column"],
+        alpha = config["general_settings"]["alpha"]
+    log: config["outputs"]["output_dir"] + "log/filter_significant.{cov}.{output_prefix}.{signif_filter}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --signif_col {params.signif_col} \
+            --alpha {params.alpha} \
+            --outfile {output.outfile} > {log} 2>&1
+        """
+
+
+rule visualise:
+    input:
+        data = config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffectsWithMultTest-{signif_filter}significant.txt"
+    output:
+        fig1 = report(config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects-{signif_filter}significant-TSSDistance-VariantType.png", category="visualise", subcategory="{cov} - TSS distance (variant type)", caption=config["inputs"]["repo_dir"] + "report_captions/tss_distance_vartype.rst"),
+        fig2 = report(config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects-{signif_filter}significant-TSSDistance-PValBins.png", category="visualise", subcategory="{cov} - TSS distance (p-value bins)",caption=config["inputs"]["repo_dir"] + "report_captions/tss_distance_pbin.rst"),
+        done = config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects-{signif_filter}significant-visualise.done"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["visualise_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["visualise_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["visualise_time"]]
+    threads: config["visualise_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/visualise_tss_distance.py",
+        out = config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-TopEffects-{signif_filter}significant"
+    log: config["outputs"]["output_dir"] + "log/visualise.{cov}.{output_prefix}.{signif_filter}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --data {input.data} \
+            --out {params.out} > {log} 2>&1
+        singularity exec --bind {params.bind} {params.sif} touch {output.done}
+        """
+
+
+rule plot_eqtl:
+    input:
+        annotation = get_annotation,
+        vcf = get_vcf,
+        index = get_vcf_index,
+        exp = get_exp,
+        gte = get_qtl_gte,
+        snpgenelimit = config["inputs"]["plot_eqtls"]
+    output:
+        # figure = config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-{plot_eqtls_basename}plot-{chr}_{pos}-{gene}-{gene_symbol}_{snp}.pdf",
+        finished = config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-{plot_eqtls_basename}-qtlplot.finished"
+    resources:
+        java_mem_gb = lambda wildcards, attempt: attempt * config["run_qtl_memory"] * config["run_qtl_threads"] - config["settings_extra"]["java_memory_buffer"],
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["run_qtl_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["run_qtl_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["run_qtl_time"]]
+    threads: config["run_qtl_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        jar = "/opt/tools/MbQTL.jar" if config["qtl_settings_extra"]["mbqtl_jar"] is None else config["qtl_settings_extra"]["mbqtl_jar"],
+        replacemissinggenotypes = "--replacemissinggenotypes" if config["qtl_settings"]["replacemissinggenotypes"] else "",
+        usehardgenotypecalls = "--usehardgenotypecalls" if config["qtl_settings"]["usehardgenotypecalls"] else "",
+        norank = "--norank" if config["qtl_settings"]["norank"] else "",
+        out = config["outputs"]["output_dir"] + "figures/{cov}/{output_prefix}-{plot_eqtls_basename}-"
+    log: config["outputs"]["output_dir"] + "log/plot_eqtl.{cov}.{output_prefix}.{plot_eqtls_basename}.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} java -Xmx{resources.java_mem_gb}g -Xms{resources.java_mem_gb}g \
+            -Djava.util.concurrent.ForkJoinPool.common.parallelism={threads} \
+            -Dmaximum.threads={threads} -Dthread.pool.size={threads} \
+            -jar {params.jar} \
+            --mode mbqtlplot \
+            --vcf {input.vcf} \
+            --exp {input.exp} \
+            --gte {input.gte} \
+            --annotation {input.annotation} \
+            --snpgenelimit {input.snpgenelimit} \
+            {params.replacemissinggenotypes} \
+            {params.usehardgenotypecalls} \
+            {params.norank} \
+            --out {params.out} > {log} 2>&1
+            
+        singularity exec --bind {params.bind} {params.sif} touch {output.finished}
+        """
+
+
+rule results:
+    input:
+        data = expand(config["outputs"]["output_dir"] + "output/{cov}/{output_prefix}-TopEffectsWithMultTest.txt", cov=covariates, output_prefix=config["outputs"]["output_prefix"])
+    output:
+        out = config["outputs"]["output_dir"] + "output/mbQTL-results.txt"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["results_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["results_memory"],
+        time = lambda wildcards,attempt: config["cluster_time"][(attempt - 1) + config["results_time"]]
+    threads: config["results_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/results.py",
+        indir = config["outputs"]["output_dir"] + "output/",
+        alpha = config["general_settings"]["alpha"]
+    log: config["outputs"]["output_dir"] + "log/results.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --indir {params.indir} \
+            --alpha {params.alpha} \
+            --outfile {output.out} > {log} 2>&1
+        """

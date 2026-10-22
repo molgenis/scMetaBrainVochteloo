@@ -1,0 +1,499 @@
+#!/usr/bin/env python
+import pandas as pd
+import os
+import re
+
+# Set logger level.
+if config["settings_extra"]["debug"]:
+    logger.set_level("DEBUG")
+
+# Check required input arguments.
+if config["inputs"]["singularity_image"] is None or not os.path.exists(config["inputs"]["singularity_image"]):
+    logger.error("Critical, singularity_image does not exist.\n\nExiting.")
+    exit("MissingsingularityImage")
+if config["inputs"]["repo_dir"] is None or not os.path.exists(config["inputs"]["repo_dir"]):
+    logger.error("Critical, repo_dir does not exist.\n\nExiting.")
+    exit("MissingRepoDir")
+if config["inputs"]["poolsheet"] is None or not os.path.exists(config["inputs"]["poolsheet"]):
+    logger.error("Critical, poolsheet file does not exist.\n\nExiting.")
+    exit("MissingsingPoolSheet")
+if config["inputs"]["psam"] is None or not os.path.exists(config["inputs"]["psam"]):
+    logger.error("Critical, psam file does not exist.\n\nExiting.")
+    exit("MissingsingPSAM")
+if config["inputs"]["cell_annotation"] is None or not os.path.exists(config["inputs"]["cell_annotation"]):
+    logger.error("Critical, cell annotation file does not exist.\n\nExiting.")
+    exit("MissingsingCellAnnotation")
+if config["inputs"]["droplet_type_annotation"] is None or not os.path.exists(config["inputs"]["droplet_type_annotation"]):
+    logger.error("Critical, droplet type annotation file does not exist.\n\nExiting.")
+    exit("MissingsingDropletTypeAnnotation")
+if config["inputs"]["cell_type_annotation"] is None or not os.path.exists(config["inputs"]["cell_type_annotation"]):
+    logger.error("Critical, cell type annotation file does not exist.\n\nExiting.")
+    exit("MissingsingCellTypeAnnotation")
+if config["inputs"]["rb_genes"] is None or not os.path.exists(config["inputs"]["rb_genes"]):
+    logger.error("Critical, RB genes does file not exist.\n\nExiting.")
+    exit("MissingsingRBGenes")
+if config["inputs"]["mt_genes"] is None or not os.path.exists(config["inputs"]["mt_genes"]):
+    logger.error("Critical, MT genes does file not exist.\n\nExiting.")
+    exit("MissingsingMTGenes")
+if config["outputs"]["output_dir"] is None:
+    logger.error("Critical, the output_dir cannot be empty.\n\nExiting.")
+    exit("MissingOutputDir")
+
+# Add trailing /.
+if not config["outputs"]["output_dir"].endswith("/"):
+    config["outputs"]["output_dir"] += "/"
+
+# Create the output directory.
+os.makedirs(config["outputs"]["output_dir"], exist_ok=True)
+
+# Loading poolsheet.
+logger.info("Loading the input poolsheet")
+POOL_DF = pd.read_csv(config["inputs"]["poolsheet"], sep="\t", dtype=str)
+logger.info("\tLoaded {} with shape: {}".format(os.path.basename(config["inputs"]["poolsheet"]), POOL_DF.shape))
+
+POOL_DF.fillna("NA", inplace=True)
+POOL_DF.index = POOL_DF["Pool"]
+
+if "Pool" not in POOL_DF.columns:
+    logger.info("\tError, missing 'Pool' column in poolsheet file for the selected methods.\n\nExiting.")
+    stop("InvalidPoolSheetFile")
+if not POOL_DF["Pool"].is_unique:
+    logger.info("\tError, your 'Pool' column contains duplicates, please make sure all values are unique.\n\nExiting.")
+    stop("InvalidPoolSheetFile")
+if not "Dataset" in POOL_DF:
+    POOL_DF["Dataset"] = "Dataset"
+
+logger.info("\tValid.")
+POOLS = POOL_DF["Pool"].tolist()
+POOL_TO_DATASET = dict(zip(POOL_DF["Pool"], POOL_DF["Dataset"]))
+
+DYNAMIC_CAP_BARC0DES = None
+if isinstance(config["settings"]["cap_barcodes"], dict):
+    DYNAMIC_CAP_BARC0DES = config["settings"]["cap_barcodes"]
+    config["settings"]["cap_barcodes"] = ["Dynamic"]
+
+# Create the settings.
+logger.info("\nDetermine expected output:")
+PB_SETTINGS = []
+for ncount_rna in config["settings"]["ncount_rna"]:
+    for nfeature_rna in config["settings"]["nfeature_rna"]:
+        for complexity in config["settings"]["complexity"]:
+            for percent_rb in config["settings"]["percent_rb"]:
+                for percent_mt in config["settings"]["percent_mt"]:
+                    for malat1 in config["settings"]["malat1"]:
+                        for cap_barcodes in config["settings"]["cap_barcodes"]:
+                            for cr_barcodes in config["settings"]["cellranger_barcodes"]:
+                                setting = "{ncount_rna}nCountRNA_{nfeature_rna}nFeatureRNA_{complexity}Complex_{percent_rb}PcntRB_{percent_mt}PcntMT_{malat1}MALAT1_{cap_barcodes}CapBarcodes_{cr_barcodes}CRBarcodes".format(ncount_rna=ncount_rna, nfeature_rna=nfeature_rna, complexity=complexity, percent_rb=percent_rb, percent_mt=percent_mt, malat1=malat1, cap_barcodes=cap_barcodes, cr_barcodes=cr_barcodes)
+                                logger.info("\tRequesting pseudobulk setting: {}".format(setting))
+                                PB_SETTINGS.append(setting)
+
+MERGE_SETTINGS = []
+for min_cells in config["settings"]["min_cells"]:
+    setting = "{min_cells}Cells".format(min_cells=min_cells)
+    logger.info("\tRequesting merge setting: {}".format(setting))
+    MERGE_SETTINGS.append(setting)
+
+BRYOIS_FILTER_SETTINGS = []
+for min_obs in config["settings"]["min_obs_bryois"]:
+    for min_cpm in config["settings"]["min_cpm_bryois"]:
+        setting = "{min_obs}Obs_{min_cpm}CPM_BryoisNorm".format(min_obs=min_obs, min_cpm=min_cpm)
+        logger.info("\tRequesting Bryois filter setting: {}".format(setting))
+        BRYOIS_FILTER_SETTINGS.append(setting)
+
+FUJITA_FILTER_SETTINGS = []
+for min_cpm in config["settings"]["min_cpm_fujita"]:
+    setting = "{min_cpm}CPM_FujitaNorm".format(min_cpm=min_cpm)
+    logger.info("\tRequesting Fujita filter setting: {}".format(setting))
+    FUJITA_FILTER_SETTINGS.append(setting)
+
+BARCODE_QC_COLUMNS = ["nCount_RNA", "nFeature_RNA", "complexity", "rb", "percent.rb", "mt", "percent.mt", "MALAT1", "nCount_RNAIndex", "CellRanger"]
+
+wildcard_constraints:
+    pb_setting = "[0-9A-Za-z_]+",
+    merge_setting = "[0-9A-Za-z_]+",
+    filter_setting = "[0-9A-Za-z_]+",
+    pool = "[\w-]+",
+    cell_type = "[0-9A-Za-z_.]+"
+
+
+def print_wildcards(wildcards):
+    out = []
+    for key, value in wildcards.items():
+        out.append(key + "=" + value)
+    return ", ".join(out)
+
+
+def get_pseudobulk_setting(wildcards, parameter):
+    logger.debug("rule pseudobulk_pool - get_pseudobulk_setting({}, parameter={})".format(print_wildcards(wildcards), parameter))
+    match = re.match("([0-9]+)nCountRNA_([0-9]+)nFeatureRNA_([0-9]+)Complex_([0-9]+)PcntRB_([0-9]+)PcntMT_([0-9]+)MALAT1_([A-Za-z0-9]+)CapBarcodes_(True|False)CRBarcodes", wildcards.pb_setting)
+    if parameter == "nCount_RNA":
+        value = match.group(1)
+    elif parameter == "nFeature_RNA":
+        value = match.group(2)
+    elif parameter == "complexity":
+        value = match.group(3)
+    elif parameter == "percent.rb":
+        value = match.group(4)
+    elif parameter == "percent.mt":
+        value = match.group(5)
+    elif parameter == "MALAT1":
+        value = match.group(6)
+    elif parameter == "CapBarcodes":
+        value = match.group(7)
+        if value == 'None':
+            value = None
+        if value == 'Dynamic':
+            value = str(DYNAMIC_CAP_BARC0DES[POOL_TO_DATASET[wildcards.pool]])
+    elif parameter == "CRBarcodes":
+        value = match.group(8)
+        if value == 'True':
+            value = True
+        elif value == 'False':
+            value = False
+        else:
+            logger.error("Critical, Unexpected value for parameter in get_pseudobulk_setting: CRBarcodes\n\nExiting.")
+            exit()
+    else:
+        logger.error("Critical, Unexpected value for parameter in get_pseudobulk_setting: {}\n\nExiting.".format(parameter))
+        exit()
+
+    logger.debug("\treturning '{}'".format(value))
+    return value
+
+
+def get_merge_setting(wildcards, parameter):
+    logger.debug("rule merge_expr - get_merge_setting({}, parameter={})".format(print_wildcards(wildcards), parameter))
+    match = re.match("([0-9]+)Cells", wildcards.merge_setting)
+    if parameter == "MinCells":
+        value = match.group(1)
+    else:
+        logger.error("Critical, Unexpected value for parameter in get_merge_setting: {}\n\nExiting.".format(parameter))
+        exit()
+
+    logger.debug("\treturning '{}'".format(value))
+    return value
+
+
+def get_filter_setting_bryois(wildcards, parameter):
+    logger.debug("rule normalise_bryois - get_filter_setting_bryois({}, parameter={})".format(print_wildcards(wildcards), parameter))
+    match = re.match("([0-9]+)Obs_([0-9]+)CPM_BryoisNorm", wildcards.filter_setting)
+    if parameter == "MinObs":
+        value = match.group(1)
+    elif parameter == "MinCPM":
+        value = match.group(2)
+    else:
+        logger.error("Critical, Unexpected value for parameter in get_filter_setting: {}\n\nExiting.".format(parameter))
+        exit()
+
+    logger.debug("\treturning '{}'".format(value))
+    return value
+
+
+def get_filter_setting_fujita(wildcards, parameter):
+    logger.debug("rule normalise_fujita - get_filter_setting_fujita({}, parameter={})".format(print_wildcards(wildcards), parameter))
+    match = re.match("([0-9]+)CPM_FujitaNorm", wildcards.filter_setting)
+    if parameter == "MinCPM":
+        return match.group(1)
+    else:
+        logger.error("Critical, Unexpected value for parameter in get_filter_setting: {}\n\nExiting.".format(parameter))
+        exit()
+
+    logger.debug("\treturning ''")
+    return ""
+
+
+rule all:
+    input:
+        qc_metrics = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/qc_metrics.tsv.gz", pb_setting=PB_SETTINGS),
+        gte = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.gte.txt", pb_setting=PB_SETTINGS, merge_setting=MERGE_SETTINGS, cell_type=config["settings"]["cell_type"]),
+        exp_bryois = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.TMM.tsv.gz", pb_setting=PB_SETTINGS, merge_setting=MERGE_SETTINGS, cell_type=config["settings"]["cell_type"], filter_setting=BRYOIS_FILTER_SETTINGS),
+        exp_fujita = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.log2CPM_QN.tsv.gz", pb_setting=PB_SETTINGS, merge_setting=MERGE_SETTINGS, cell_type=config["settings"]["cell_type"], filter_setting=FUJITA_FILTER_SETTINGS),
+        ncells_stats = config["outputs"]["output_dir"] + "expression/ncells.stats.tsv",
+        ngenes_stats = config["outputs"]["output_dir"] + "expression/ngenes.stats.tsv",
+
+
+rule pseudobulk_pool:
+    input:
+        poolsheet = config["inputs"]["poolsheet"],
+        psam = config["inputs"]["psam"],
+        cell_annotation = config["inputs"]["cell_annotation"],
+        droplet_type_annotation = config["inputs"]["droplet_type_annotation"],
+        cell_type_annotation = config["inputs"]["cell_type_annotation"],
+        rb_genes = config["inputs"]["rb_genes"],
+        mt_genes = config["inputs"]["mt_genes"]
+    output:
+        # metadata = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.metadata.tsv.gz",
+        # qc_metrics = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.qc_metrics.tsv.gz",
+        full_metadata = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.full.metadata.tsv.gz",
+        exp = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.pseudobulk.tsv.gz",
+        stats = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.pseudobulk.stats.tsv.gz",
+        # h5 = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.{sample}.{cell_type}.counts.h5",
+        done = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.done",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["pseudobulk_pool_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["pseudobulk_pool_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["pseudobulk_pool_time"]],
+    threads: config["pseudobulk_pool_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/pseudobulk.py",
+        ct_pairing = "--ct_pairing " + config["inputs"]["cell_type_pairing"] if config["inputs"]["cell_type_pairing"] is not None else "",
+        sample_aggregate = config["settings_extra"]["sample_aggregate"],
+        ancestry = config["settings"]["ancestry"],
+        cell_level = config["settings"]["cell_level"],
+        ncount_rna = lambda wildcards: get_pseudobulk_setting(wildcards, parameter="nCount_RNA"),
+        nfeature_rna = lambda wildcards: get_pseudobulk_setting(wildcards, parameter="nFeature_RNA"),
+        complexity = lambda wildcards: get_pseudobulk_setting(wildcards,parameter="complexity"),
+        percent_rb = lambda wildcards: get_pseudobulk_setting(wildcards, parameter="percent.rb"),
+        percent_mt = lambda wildcards: get_pseudobulk_setting(wildcards, parameter="percent.mt"),
+        malat1 = lambda wildcards: get_pseudobulk_setting(wildcards, parameter="MALAT1"),
+        cap_barcodes = lambda wildcards: "--cap_barcodes " + get_pseudobulk_setting(wildcards, parameter="CapBarcodes") if get_pseudobulk_setting(wildcards, parameter="CapBarcodes") is not None else "",
+        cr_barcodes = lambda wildcards: "--cr_barcodes" if get_pseudobulk_setting(wildcards, parameter="CRBarcodes") else "",
+        feature_name = config["settings_extra"]["feature_name"],
+        aggregate_fun = config["settings_extra"]["aggregate_fun"],
+        save_filtered_h5 = "--save_filtered_h5" if config["settings"]["save_filtered_h5"] else "",
+        out = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/"
+    log: config["outputs"]["output_dir"] + "log/pseudobulk_pool.{pb_setting}.{pool}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --poolsheet {input.poolsheet} \
+            --pool {wildcards.pool} \
+            --psam {input.psam} \
+            --cell_annotation {input.cell_annotation} \
+            --droplet_type_annotation {input.droplet_type_annotation} \
+            --cell_type_annotation {input.cell_type_annotation} \
+            {params.ct_pairing} \
+            --rb_genes {input.rb_genes} \
+            --mt_genes {input.mt_genes} \
+            --sample_aggregate {params.sample_aggregate} \
+            --ancestry {params.ancestry} \
+            --cell_level {params.cell_level} \
+            --ncount_rna {params.ncount_rna} \
+            --nfeature_rna {params.nfeature_rna} \
+            --complexity {params.complexity} \
+            --percent_rb {params.percent_rb} \
+            --percent_mt {params.percent_mt} \
+            --malat1 {params.malat1} \
+            {params.cap_barcodes} \
+            {params.cr_barcodes} \
+            --feature_name {params.feature_name} \
+            --aggregate_fun {params.aggregate_fun} \
+            {params.save_filtered_h5} \
+            --out {params.out} > {log} 2>&1
+        singularity exec --bind {params.bind} {params.sif} touch {output.exp}
+        singularity exec --bind {params.bind} {params.sif} touch {output.stats}
+        singularity exec --bind {params.bind} {params.sif} touch {output.done}
+        """
+
+
+rule visualise_barcode_qc:
+    input:
+        poolsheet = config["inputs"]["poolsheet"],
+        qc_metrics = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.full.metadata.tsv.gz", pool=POOLS, allow_missing=True)
+    output:
+        qc_metrics = config["outputs"]["output_dir"] + "expression/{pb_setting}/qc_metrics.tsv.gz",
+        fig1 = report(config["outputs"]["output_dir"] + "figures/{pb_setting}/ncount_rna_vs_percent_mt_all_barcodes.png"),
+        fig2 = report(expand(config["outputs"]["output_dir"] + "figures/{pb_setting}/barcode_qc_{variable}_stats.png", variable=BARCODE_QC_COLUMNS + config["settings"]["cell_type"], allow_missing=True)),
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["visualise_barcode_qc_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["visualise_barcode_qc_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["visualise_barcode_qc_time"]],
+    threads: config["visualise_barcode_qc_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/visualise_barcode_qc.py",
+        indir = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/",
+        barcode_qc_columns = " ".join(BARCODE_QC_COLUMNS),
+        cell_level = config["settings"]["cell_level"],
+        tag = "tag",
+        palette = "--palette " + config["inputs"]["palette"] if config["inputs"]["palette"] is not None else "",
+        data_out = config["outputs"]["output_dir"] + "expression/{pb_setting}/",
+        plot_out = config["outputs"]["output_dir"] + "figures/{pb_setting}/"
+    log: config["outputs"]["output_dir"] + "log/visualise_barcode_qc.{pb_setting}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --poolsheet {input.poolsheet} \
+            --indir {params.indir} \
+            --barcode_qc_columns {params.barcode_qc_columns} \
+            --cell_level {params.cell_level} \
+            --tag {params.tag} \
+            {params.palette} \
+            --data_out {params.data_out} \
+            --plot_out {params.plot_out} > {log} 2>&1
+        """
+
+
+rule merge_pseudobulk_expr:
+    input:
+        poolsheet = config["inputs"]["poolsheet"],
+        done = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.done", pool=POOLS, allow_missing=True)
+    output:
+        exp = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.tsv.gz",
+        gte = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.gte.txt",
+        # gte_dataset = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.{dataset}.gte.txt",
+        gte_nodataset = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.NoDataset.gte.txt",
+        stats = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.stats.tsv",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_pseudobulk_expr_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_pseudobulk_expr_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["merge_pseudobulk_expr_time"]],
+    threads: config["merge_pseudobulk_expr_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_pseudobulk_expr.py",
+        indir = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/",
+        min_cells = lambda wildcards: get_merge_setting(wildcards, parameter="MinCells"),
+        aggregate_fun = config["settings_extra"]["aggregate_fun"],
+        out = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/"
+    log: config["outputs"]["output_dir"] + "log/merge_pseudobulk_expr.{pb_setting}.{merge_setting}.{cell_type}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --poolsheet {input.poolsheet} \
+            --indir {params.indir} \
+            --cell_type {wildcards.cell_type} \
+            --min_cells {params.min_cells} \
+            --aggregate_fun {params.aggregate_fun} \
+            --out {params.out} > {log} 2>&1
+        singularity exec --bind {params.bind} {params.sif} touch {output.exp} {output.gte} {output.gte_nodataset} {output.stats}
+        """
+
+
+rule merge_pseudobulk_stats:
+    input:
+        poolsheet = config["inputs"]["poolsheet"],
+        stats = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/{pool}.pseudobulk.stats.tsv.gz", pool=POOLS, allow_missing=True)
+    output:
+        stats = config["outputs"]["output_dir"] + "expression/{pb_setting}/pseudobulk.stats.tsv.gz",
+        sumstats = config["outputs"]["output_dir"] + "expression/{pb_setting}/pseudobulk.sumstats.tsv.gz"
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_pseudobulk_stats_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_pseudobulk_stats_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["merge_pseudobulk_stats_time"]],
+    threads: config["merge_pseudobulk_stats_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_pseudobulk_stats.py",
+        indir = config["outputs"]["output_dir"] + "expression/{pb_setting}/pools/",
+        out = config["outputs"]["output_dir"] + "expression/{pb_setting}/"
+    log: config["outputs"]["output_dir"] + "log/merge_pseudobulk_stats.{pb_setting}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --poolsheet {input.poolsheet} \
+            --indir {params.indir} \
+            --out {params.out} > {log} 2>&1
+         singularity exec --bind {params.bind} {params.sif} touch {output.stats} {output.sumstats}
+        """
+
+
+rule merge_ncells_stats:
+    input:
+        stats = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.stats.tsv", pb_setting=PB_SETTINGS, merge_setting=MERGE_SETTINGS, cell_type=config["settings"]["cell_type"])
+    output:
+        stats = config["outputs"]["output_dir"] + "expression/ncells.stats.tsv",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_ncells_stats_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_ncells_stats_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["merge_ncells_stats_time"]],
+    threads: config["merge_ncells_stats_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_ncells_stats.py",
+        workdir = config["outputs"]["output_dir"] + "expression/"
+    log: config["outputs"]["output_dir"] + "log/merge_ncells_stats.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --workdir {params.workdir} > {log} 2>&1
+        """
+
+
+rule normalise_bryois:
+    priority: 50
+    input:
+        exp = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.tsv.gz",
+    output:
+        exp = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.TMM.tsv.gz",
+        stats = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.TMM.stats.tsv",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["normalise_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["normalise_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["normalise_time"]]
+    threads: config["normalise_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/normalise_bryois.R",
+        min_obs = lambda wildcards: get_filter_setting_bryois(wildcards, parameter="MinObs"),
+        min_cpm = lambda wildcards: get_filter_setting_bryois(wildcards, parameter="MinCPM"),
+        out = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk."
+    log: config["outputs"]["output_dir"] + "log/normalise_bryois.{pb_setting}.{merge_setting}.{filter_setting}.{cell_type}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} Rscript {params.script} \
+            --exp {input.exp} \
+            --min_obs {params.min_obs} \
+            --min_cpm {params.min_cpm} \
+            --out {params.out} > {log} 2>&1
+        """
+
+
+rule normalise_fujita:
+    priority: 50
+    input:
+        exp = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{cell_type}.pseudobulk.tsv.gz",
+        # batches = ""
+    output:
+        exp = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.log2CPM_QN.tsv.gz",
+        stats = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.log2CPM_QN.stats.tsv",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["normalise_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["normalise_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["normalise_time"]]
+    threads: config["normalise_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/normalise_fujita.R",
+        min_cpm = lambda wildcards: get_filter_setting_fujita(wildcards, parameter="MinCPM"),
+        out = config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk."
+    log: config["outputs"]["output_dir"] + "log/normalise_fujita.{pb_setting}.{merge_setting}.{filter_setting}.{cell_type}.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} Rscript {params.script} \
+            --exp {input.exp} \
+            --min_cpm {params.min_cpm} \
+            --out {params.out} > {log} 2>&1
+        """
+
+
+rule merge_ngenes_stats:
+    input:
+        bryois_stats = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.TMM.stats.tsv", pb_setting=PB_SETTINGS, merge_setting=MERGE_SETTINGS, filter_setting=BRYOIS_FILTER_SETTINGS, cell_type=config["settings"]["cell_type"]),
+        fujita_stats = expand(config["outputs"]["output_dir"] + "expression/{pb_setting}/{merge_setting}/{filter_setting}/{cell_type}.pseudobulk.log2CPM_QN.stats.tsv", pb_setting=PB_SETTINGS, merge_setting=MERGE_SETTINGS, filter_setting=FUJITA_FILTER_SETTINGS, cell_type=config["settings"]["cell_type"])
+    output:
+        stats = config["outputs"]["output_dir"] + "expression/ngenes.stats.tsv",
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_ngenes_stats_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["merge_ngenes_stats_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["merge_ngenes_stats_time"]],
+    threads: config["merge_ngenes_stats_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/merge_ngenes_stats.py",
+        workdir = config["outputs"]["output_dir"] + "expression/"
+    log: config["outputs"]["output_dir"] + "log/merge_ngenes_stats.log"
+    shell:
+        """
+         singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --workdir {params.workdir} > {log} 2>&1
+        """

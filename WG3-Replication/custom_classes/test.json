@@ -1,0 +1,21 @@
+{
+  "class_name": "mbQTL_CUSTOM",
+  "all_effects_filename": "<CT>-AllEffects.txt",
+  "top_effects_filename": "<CT>-TopEffects.txt",
+  "n": null,
+  "columns": {
+    "gene_hgnc": [["GeneSymbol", null, null]],
+    "SNP_rsid": "SNP",
+    "SNP_chr:pos": [["SNPChr", null, ":"], ["SNPPos", null, null]],
+    "alleles": "SNPAlleles",
+    "EA": "SNPEffectAllele",
+    "beta": "MetaBeta",
+    "beta_se": "MetaSE",
+    "n_tests": "NrTestedSNPs",
+    "nominal_pvalue": "MetaP",
+    "permuted_pvalue": "BetaAdjustedMetaP",
+    "zscore": "MetaPZ",
+    "N": "MetaPN",
+    "AF": "SNPEffectAlleleFreq"
+  }
+}

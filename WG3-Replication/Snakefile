@@ -1,0 +1,310 @@
+#!/usr/bin/env python
+import os
+import json
+
+# Set logger level.
+if config["settings_extra"]["debug"]:
+    logger.set_level("DEBUG")
+
+# Add trailing /.
+if not config["inputs"]["repo_dir"].endswith("/"):
+    config["inputs"]["repo_dir"] += "/"
+if not config["outputs"]["output_dir"].endswith("/"):
+    config["outputs"]["output_dir"] += "/"
+if not config["outputs"]["log_dir"].endswith("/"):
+    config["outputs"]["log_dir"] += "/"
+
+if not config["settings"]["disc_inputs"]:
+    config["settings"]["disc_inputs"] = {"<>": ["Main"]}
+if not config["settings"]["repl_inputs"]:
+    config["settings"]["repl_inputs"] = {"<>": ["Main"]}
+
+# Check if the singularity image exists.
+if not os.path.exists(config["inputs"]["singularity_image"]):
+    logger.error("Critical, the singularity image does not exist.\n\nExiting.")
+    exit("MissingSIFFile")
+
+if config["inputs"]["discovery_name"] == config["inputs"]["replication_name"]:
+    logger.error("Critical, discovery and replication name are the same.")
+    exit("InvalidDiscReplName")
+
+if not os.path.exists(config["inputs"]["repo_dir"] + "data/ensembl_to_hgnc.txt"):
+    logger.error("Warning, gene translate file is missing.")
+
+# Set logger level.
+cell_type_names = None
+if config["settings"]["only_matching"] and config["inputs"]["cell_type_names"] is not None and os.path.exists(config["inputs"]["cell_type_names"]):
+    logger.info("loading 'cell_type_names'.")
+    with open(config["inputs"]["cell_type_names"]) as f:
+        cell_type_names = json.load(f)
+    f.close()
+
+def print_dict(wildcards):
+    if wildcards is None:
+        return ""
+
+    out = []
+    for key, values in wildcards.items():
+        if not isinstance(values, list):
+            values = [values]
+        out.append(key + "=" + ", ".join([str(value) for value in values]))
+    return ", ".join(out)
+
+
+def build_paths(ref_path, inputs=None):
+    logger.debug("build_paths(ref_path:{}, inputs:{})".format(ref_path, print_dict(inputs)))
+
+    if inputs is None:
+        logger.debug("\treturning '{}'".format(ref_path))
+        return ref_path
+
+    labels = list(inputs.keys())
+    paths = [("", ref_path)]
+
+    label_index = 0
+    while label_index != len(labels):
+        label = labels[label_index]
+        values = inputs[label]
+
+        updated_paths = []
+        for value in values:
+            for (settings, path) in paths:
+                updated_paths.append((settings + str(value) + "_", path.replace(label, str(value))))
+
+        paths = updated_paths
+        label_index += 1
+
+    out_fpaths = {}
+    for (settings, path) in paths:
+        settings = settings.rstrip("_")
+        logger.debug("\treturning '{}={}'".format(settings, path))
+        out_fpaths[settings] = path
+
+    return out_fpaths
+
+def get_plot_replication_stats_input(wildcards):
+    logger.debug("get_plot_replication_stats_input(wildcards:{})".format(print_dict(wildcards)))
+    input_files = []
+    input_figures = []
+    for disc_settings, disc_fpath in DISC_FPATHS.items():
+        for disc_ct in config["settings"]["disc_cell_types"]:
+            disc_standard_ct = disc_ct
+            if cell_type_names is not None:
+                disc_standard_ct = cell_type_names[disc_ct] if disc_ct in cell_type_names else disc_ct
+            for repl_settings, repl_fpath in REPL_FPATHS.items():
+                for repl_ct in config["settings"]["repl_cell_types"]:
+                    repl_standard_ct = repl_ct
+                    if cell_type_names is not None:
+                        repl_standard_ct = cell_type_names[repl_ct] if repl_ct in cell_type_names else repl_ct
+
+                    combination_str = "disc_settings={}, disc_ct={} [{}], repl_settings={}, repl_ct={} [{}]".format(disc_settings, disc_ct, disc_standard_ct, repl_settings, repl_ct, repl_standard_ct)
+                    if config["settings"]["only_matching"] and disc_ct != repl_ct and disc_standard_ct != repl_standard_ct:
+                        logger.debug("\tskipping '{}' due to only_matching.".format(combination_str))
+                        continue
+                    if not os.path.exists(disc_fpath.replace("<CT>", disc_ct)) or not os.path.exists(repl_fpath.replace("<CT>", repl_ct)):
+                        logger.debug("\tskipping '{}' due to non existing filepaths.".format(combination_str))
+                        continue
+
+                    logger.debug("\trequesting '{}'.".format(combination_str))
+                    input_files.append(config["outputs"]["output_dir"] + "replication_data/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}replication/{disc_name}{disc_settings}_{disc_ct}_Disc_{repl_name}{repl_settings}_{repl_ct}_Repl_ReplicationStats.txt.gz".format(disc_name=config["inputs"]["discovery_name"], disc_settings=disc_settings, disc_ct=disc_ct, repl_name=config["inputs"]["replication_name"], repl_settings=repl_settings, repl_ct=repl_ct))
+                    for extension in config["settings"]["extensions"]:
+                        input_figures.append(config["outputs"]["output_dir"] + "replication_plot/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}replication/{disc_name}{disc_settings}_{disc_ct}_Disc_{repl_name}{repl_settings}_{repl_ct}_Repl.{extension}".format(disc_name=config["inputs"]["discovery_name"], disc_settings=disc_settings, disc_ct=disc_ct, repl_name=config["inputs"]["replication_name"], repl_settings=repl_settings, repl_ct=repl_ct, extension=extension))
+    return input_files, input_figures
+
+DISC_FPATHS = build_paths(ref_path=config["inputs"]["discovery_path"], inputs=config["settings"]["disc_inputs"])
+REPL_FPATHS = build_paths(ref_path=config["inputs"]["replication_path"], inputs=config["settings"]["repl_inputs"])
+PLOT_REPLICATION_STATS_INPUT, plot_replication_stats_figures = get_plot_replication_stats_input(wildcards={})
+input_files = plot_replication_stats_figures
+if len(PLOT_REPLICATION_STATS_INPUT) == 1:
+    input_files.extend(PLOT_REPLICATION_STATS_INPUT)
+elif len(PLOT_REPLICATION_STATS_INPUT) > 1:
+    input_files.append(config["outputs"]["output_dir"] + "replication_data/{disc_name}discovery_{repl_name}replication/{disc_name}_Disc_{repl_name}_Repl_ReplicationStats.txt.gz".format(disc_name=config["inputs"]["discovery_name"], repl_name=config["inputs"]["replication_name"]))
+    for extension in config["settings"]["extensions"]:
+        input_files.append(config["outputs"]["output_dir"] + "replication_plot/{disc_name}discovery_{repl_name}replication/{disc_name}_Disc_{repl_name}_Repl_ReplicationStats.{extension}".format(disc_name=config["inputs"]["discovery_name"], repl_name=config["inputs"]["replication_name"], extension=extension))
+
+
+wildcard_constraints:
+    disc_name=config["inputs"]["discovery_name"],
+    repl_name=config["inputs"]["replication_name"]
+
+
+rule all:
+    input: input_files
+
+
+rule plot_replication_stats:
+    input:
+        replication_stats = PLOT_REPLICATION_STATS_INPUT
+    output:
+        replication_stats = config["outputs"]["output_dir"] + "replication_data/{disc_name}discovery_{repl_name}replication/{disc_name}_Disc_{repl_name}_Repl_ReplicationStats.txt.gz",
+        replication_figures = expand(config["outputs"]["output_dir"] + "replication_plot/{disc_name}discovery_{repl_name}replication/{disc_name}_Disc_{repl_name}_Repl_ReplicationStats.{extension}", extension=config["settings"]["extensions"], allow_missing=True)
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["rules"]["plot_replication_stats_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["rules"]["plot_replication_stats_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["rules"]["plot_replication_stats_time"]]
+    threads: config["rules"]["plot_replication_stats_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/plot_replication_stats.py",
+        workdir = config["outputs"]["output_dir"],
+        disc_name = config["inputs"]["discovery_name"],
+        disc_settings = ",".join(DISC_FPATHS.keys()),
+        disc_cell_types = " ".join(config["settings"]["disc_cell_types"]),
+        repl_name = config["inputs"]["replication_name"],
+        repl_settings = ",".join(REPL_FPATHS.keys()),
+        repl_cell_types = " ".join(config["settings"]["repl_cell_types"]),
+        palette = "--palette " + config["inputs"]["palette"] if config["inputs"]["palette"] is not None else "",
+        extensions = " ".join(config["settings"]["extensions"]),
+    log: config["outputs"]["log_dir"] + "log/plot_replication_stats.{disc_name}discovery_{repl_name}replication.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --workdir {params.workdir} \
+            --disc_name {params.disc_name} \
+            --disc_settings='{params.disc_settings}' \
+            --disc_cell_types {params.disc_cell_types} \
+            --repl_name {params.repl_name} \
+            --repl_settings='{params.repl_settings}' \
+            --repl_cell_types {params.repl_cell_types} \
+            {params.palette} \
+            --extension {params.extensions} > {log} 2>&1
+        """
+
+def fill_in_settings(settings, inputs, value):
+    logger.debug("fill_in_settings(settings:{}, inputs:{}, value:{})".format(settings, print_dict(inputs), value))
+
+    updated_value = value
+    # Loop over the input tags with their values.
+    for tag, values in inputs.items():
+        # Check if the tag is in our value.
+        if tag in updated_value:
+            # Find what value we are supposed to give this. This is stored in the wildcards.settings input.
+            settings_value = None
+            for value in values:
+                if value in settings:
+                    # We should not have duplicates.
+                    if settings_value is not None:
+                        logger.error("Critical, duplicate value '{}' for tag '{}' found.".format(value, tag))
+                        exit()
+                    settings_value = value
+
+            # We should not have duplicates.
+            if settings_value is None:
+                logger.error("Critical, unable to find tag '{}' found.".format(value, tag))
+                exit()
+
+            logger.debug("\tfilling tag '{}' with value '{}'".format(tag, settings_value))
+            updated_value = updated_value.replace(tag, settings_value)
+
+    logger.debug("\treturning '{}'".format(updated_value))
+    return updated_value
+
+def get_setting_value(setting, settings, inputs):
+    logger.debug("get_setting_value(setting={}, {}, {})".format(setting, print_dict(settings), print_dict(inputs)))
+
+    cell_type = None
+    found = False
+    for label, values in inputs.items():
+        if label != "<{}>".format(setting):
+            continue
+
+        for value in values:
+            if value in settings:
+                if found:
+                    logger.error("Critical, duplicate <CT> tag found in settings.")
+                    exit()
+                cell_type = value
+                found = True
+
+    logger.debug("\treturning '{}'".format(cell_type))
+    return cell_type
+
+
+rule replication_plot:
+    output:
+        # replication_data = directory(config["outputs"]["output_dir"] + "replication_data/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}_replication/"),
+        # replication_plot = directory(config["outputs"]["output_dir"] + "replication_plot/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}_replication/"),
+        merged_effects = config["outputs"]["output_dir"] + "replication_data/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}replication/{disc_name}{disc_settings}_{disc_ct}_Disc_{repl_name}{repl_settings}_{repl_ct}_Repl_MergedEffects.txt.gz",
+        replication_stats = config["outputs"]["output_dir"] + "replication_data/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}replication/{disc_name}{disc_settings}_{disc_ct}_Disc_{repl_name}{repl_settings}_{repl_ct}_Repl_ReplicationStats.txt.gz",
+        figure = expand(config["outputs"]["output_dir"] + "replication_plot/{disc_name}{disc_settings}discovery_{repl_name}{repl_settings}replication/{disc_name}{disc_settings}_{disc_ct}_Disc_{repl_name}{repl_settings}_{repl_ct}_Repl.{extension}", extension=config["settings"]["extensions"], allow_missing=True)
+    resources:
+        mem_per_thread_gb = lambda wildcards, attempt: attempt * config["rules"]["replication_plot_memory"],
+        disk_per_thread_gb = lambda wildcards, attempt: attempt * config["rules"]["replication_plot_memory"],
+        time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["rules"]["replication_plot_time"]]
+    threads: config["rules"]["replication_plot_threads"]
+    params:
+        bind = config["inputs"]["bind_path"],
+        sif = config["inputs"]["singularity_image"],
+        script = config["inputs"]["repo_dir"] + "scripts/replication.py",
+        discovery_method = config["inputs"]["discovery_method"],
+        discovery_path = lambda wildcards: DISC_FPATHS[wildcards.disc_settings].replace("<CT>", wildcards.disc_ct.replace("EUR-", "EUR/")),
+        discovery_all_filename = ("--discovery_all_filename '" + config["inputs"]["discovery_all_filename"] + "'") if config["inputs"]["discovery_all_filename"] is not None else "",
+        discovery_top_filename = ("--discovery_top_filename '" + config["inputs"]["discovery_top_filename"] + "'") if config["inputs"]["discovery_top_filename"] is not None else "",
+        discovery_name = config["inputs"]["discovery_name"],
+        discovery_class_settings = lambda wildcards: "--discovery_class_settings " + fill_in_settings(wildcards.disc_settings, config["settings"]["disc_inputs"], config["inputs"]["discovery_class_settings"]) if config["inputs"]["discovery_class_settings"] is not None else "",
+        discovery_rm_dupl = config["inputs"]["discovery_rm_dupl"],
+        replication_method = config["inputs"]["replication_method"],
+        replication_path = lambda wildcards: REPL_FPATHS[wildcards.repl_settings].replace("<CT>", wildcards.repl_ct.replace("EUR-", "EUR/")),
+        replication_all_filename = ("--replication_all_filename '" + config["inputs"]["replication_all_filename"] + "'") if config["inputs"]["replication_all_filename"] is not None else "",
+        replication_top_filename = ("--replication_top_filename '" + config["inputs"]["replication_top_filename"] + "'") if config["inputs"]["replication_top_filename"] is not None else "",
+        replication_name = config["inputs"]["replication_name"],
+        replication_class_settings = lambda wildcards: "--replication_class_settings " + fill_in_settings(wildcards.repl_settings, config["settings"]["repl_inputs"], config["inputs"]["replication_class_settings"]) if config["inputs"]["replication_class_settings"] is not None else "",
+        replication_rm_dupl = config["inputs"]["replication_rm_dupl"],
+        gene = config["settings"]["gene"],
+        snp = config["settings"]["snp"],
+        pvalue = config["settings"]["pvalue"],
+        effect = config["settings"]["effect"],
+        allow_infer = "--allow_infer" if config["settings"]["allow_infer"] else "",
+        alpha = config["settings"]["alpha"],
+        fdr_calc_method = config["settings"]["fdr_calc_method"],
+        log_modulus = "--log_modulus" if config["settings"]["log_modulus"] else "",
+        gene_translate_path = config["inputs"]["repo_dir"] + "data/ensembl_to_hgnc.txt",
+        cell_type_names =  "--cell_type_names " + config["inputs"]["cell_type_names"] if config["inputs"]["cell_type_names"] else "",
+        palette = "--palette " + config["inputs"]["palette"] if config["inputs"]["palette"] is not None else "",
+        extensions = " ".join(config["settings"]["extensions"]),
+        outdir = config["outputs"]["output_dir"],
+        force = "--force" if config["settings"]["force"] else "",
+        save = "--save" if config["settings"]["save"] else "",
+        verbose = "--verbose" if config["settings"]["verbose"] else "",
+        qvalue_truncp_script = config["inputs"]["repo_dir"] + "scripts/qvalue_truncp.R",
+        rb_script = config["inputs"]["repo_dir"] + "scripts/Rb.R",
+    log: config["outputs"]["log_dir"] + "log/replication_plot.{disc_name}{disc_settings}_{disc_ct}_discovery.{repl_name}{repl_settings}_{repl_ct}_replication.log"
+    shell:
+        """
+        singularity exec --bind {params.bind} {params.sif} python {params.script} \
+            --discovery_method {params.discovery_method} \
+            --discovery_path {params.discovery_path} \
+            {params.discovery_all_filename} \
+            {params.discovery_top_filename} \
+            --discovery_name {params.discovery_name}{wildcards.disc_settings} \
+            --discovery_cell_type {wildcards.disc_ct} \
+            {params.discovery_class_settings} \
+            --discovery_rm_dupl {params.discovery_rm_dupl} \
+            --replication_method {params.replication_method} \
+            --replication_path {params.replication_path} \
+            {params.replication_all_filename} \
+            {params.replication_top_filename} \
+            --replication_name {params.replication_name}{wildcards.repl_settings} \
+            --replication_cell_type {wildcards.repl_ct} \
+            {params.replication_class_settings} \
+            --replication_rm_dupl {params.replication_rm_dupl} \
+            --gene {params.gene} \
+            --snp {params.snp} \
+            --pvalue {params.pvalue} \
+            --effect {params.effect} \
+            {params.allow_infer} \
+            --alpha {params.alpha} \
+            --fdr_calc_method {params.fdr_calc_method} \
+            {params.log_modulus} \
+            --gene_translate {params.gene_translate_path} \
+            {params.cell_type_names} \
+            {params.palette} \
+            --extensions {params.extensions} \
+            --outdir {params.outdir} \
+            {params.force} \
+            {params.save} \
+            {params.verbose} \
+            --qvalue_truncp {params.qvalue_truncp_script} \
+            --rb {params.rb_script} > {log} 2>&1
+        """

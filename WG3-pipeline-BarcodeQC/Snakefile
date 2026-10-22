@@ -1,0 +1,96 @@
+import pandas as pd
+
+# Loading poolsheet.
+logger.info("Loading the input poolsheet")
+POOL_DF = pd.read_csv(config["inputs"]["poolsheet"], sep="\t", dtype=str)
+logger.info("\tLoaded {} with shape: {}".format(os.path.basename(config["inputs"]["poolsheet"]), POOL_DF.shape))
+POOL_DF.fillna("NA", inplace=True)
+POOL_DF.index = POOL_DF["Pool"]
+POOLS = POOL_DF["Pool"].tolist()
+
+rule all:
+	input:
+		poolsheet = config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/wg0_file_directories_filtered.tsv",
+		h5 = expand(config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/{pool}/{pool}.filtered.counts.h5",pool = POOLS),
+		barcodes = expand(config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/{pool}/{pool}.filtered.barcodes.csv", pool = POOLS)
+
+# Barcode QC
+rule barcodeQC:
+	input:
+		poolsheet = config["inputs"]["poolsheet"],
+		cell_annotation = config["inputs"]["cell_annotation"],
+		rb_genes = config["inputs"]["rb_genes"],
+		mt_genes = config["inputs"]["mt_genes"]
+	output:
+		h5 = config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/{pool}/{pool}.filtered.counts.h5",
+		barcodes = config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/{pool}/{pool}.filtered.barcodes.csv"
+	resources:
+		mem_per_thread_gb = lambda wildcards, attempt: attempt * config["barcode_qc_memory"],
+		disk_per_thread_gb = lambda wildcards, attempt: attempt * config["barcode_qc_memory"],
+		time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["barcode_qc_time"]],
+	threads: config["barcode_qc_threads"]
+	params: 
+		bind = config["inputs"]["bind_path"],
+		sif = config["inputs"]["singularity_image"],
+                script = config["inputs"]["repo_dir"] + "scripts/barcode_qc.py",
+		ncount_rna = config["settings"]["ncount_rna"],
+		nfeature_rna = config["settings"]["nfeature_rna"],
+		complexity = config["settings"]["complexity"],
+		percent_rb = config["settings"]["percent_rb"],
+		percent_mt = config["settings"]["percent_mt"],
+		malat1 = config["settings"]["malat1"],
+		cap_barcodes = config["settings"]["cap_barcodes"],
+		feature_name = config["settings"]["feature_name"],
+		aggregate_fun = config["settings"]["aggregate_fun"],
+		dataset = config["settings"]["dataset"],
+		outdir = lambda wildcards: f"{config['outputs']['output_dir']}{config['settings']['dataset']}/{wildcards.pool}"
+	log: config["outputs"]["output_dir"] + "log/barcode_qc.{pool}.log"
+	shell:
+		"""
+		singularity exec --bind {params.bind} {params.sif} python {params.script} \
+			--poolsheet {input.poolsheet} \
+			--pool {wildcards.pool} \
+			--cell_annotation {input.cell_annotation} \
+			--rb_genes {input.rb_genes} \
+			--mt_genes {input.mt_genes} \
+			--ncount_rna {params.ncount_rna} \
+			--nfeature_rna {params.nfeature_rna} \
+			--complexity {params.complexity} \
+			--percent_rb {params.percent_rb} \
+			--percent_mt {params.percent_mt} \
+			--malat1 {params.malat1} \
+			--cap_barcodes {params.cap_barcodes} \
+			--feature_name {params.feature_name} \
+			--aggregate_fun {params.aggregate_fun} \
+			--save_filtered_h5 \
+			--out {params.outdir}
+		"""
+
+rule create_poolsheet:
+	input:
+		h5 = expand(config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/{pool}/{pool}.filtered.counts.h5",pool = POOLS),
+		barcodes = expand(config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/{pool}/{pool}.filtered.barcodes.csv", pool = POOLS)
+	output:
+		poolsheet = config["outputs"]["output_dir"] + config["settings"]["dataset"] + "/wg0_file_directories_filtered.tsv"
+	resources:
+		mem_per_thread_gb = lambda wildcards, attempt: attempt * config["poolsheet_memory"],
+		disk_per_thread_gb = lambda wildcards, attempt: attempt * config["poolsheet_memory"],
+		time = lambda wildcards, attempt: config["cluster_time"][(attempt - 1) + config["poolsheet_time"]],
+	threads: config["poolsheet_threads"]
+	params:
+		bind = config["inputs"]["bind_path"],
+		sif = config["inputs"]["singularity_image"],
+                script = config["inputs"]["repo_dir"] + "scripts/create_poolsheet.py",
+		pools = " ".join(POOLS),
+		dataset = config["settings"]["dataset"],
+		outdir = config["outputs"]["output_dir"] + config["settings"]["dataset"]
+	log: config["outputs"]["output_dir"] + "log/create_poolsheet.log"
+	shell:
+		"""
+		singularity exec --bind {params.bind} {params.sif} python {params.script} \
+			--pools {params.pools} \
+			--outdir {params.outdir} \
+			--dataset {params.dataset} \
+			--outfile {output.poolsheet}			
+		"""
+
